@@ -33,7 +33,15 @@ jobs:
 
       # Include lo strato SwiftData, che su Linux non esiste.
       - name: Test del package
-        run: swift test --package-path ios/PitchstoneKit
+        # Se un test va in crash, il run in parallelo non dice quale: si ripete in
+        # sequenza e si stampa il crash report del processo di test.
+        run: |
+          swift test --package-path ios/PitchstoneKit && exit 0
+          swift test --package-path ios/PitchstoneKit --no-parallel || true
+          for f in ~/Library/Logs/DiagnosticReports/*.ips; do
+            if grep -q PitchstoneKit "$f" 2>/dev/null; then head -c 30000 "$f"; fi
+          done
+          exit 1
 
       - name: Scegli il simulatore iPad
         id: sim

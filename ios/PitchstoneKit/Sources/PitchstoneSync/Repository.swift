@@ -101,6 +101,38 @@ public final class Repository {
         return edge
     }
 
+    /// Allinea gli archi di tipo `link` di un nodo ai suoi link `[[...]]`: crea quelli
+    /// nuovi, ripristina quelli tornati, mette nel cestino quelli spariti dal testo.
+    /// Gli archi manuali e quelli dell'AI non vengono toccati.
+    public func syncLinkEdges(from nodeID: UUID, to targets: Set<UUID>) {
+        guard store.node(nodeID) != nil else { return }
+        let wanted = targets.subtracting([nodeID]).filter { store.node($0) != nil }
+        // Tutti gli archi link del nodo per destinazione: possono esserci doppioni,
+        // per esempio creati da due dispositivi prima di sincronizzarsi.
+        var existing: [UUID: [EdgeRecord]] = [:]
+        for edge in store.allEdges() where edge.sourceID == nodeID && edge.kind == .link {
+            existing[edge.targetID, default: []].append(edge)
+        }
+        for target in wanted {
+            let edges = existing[target] ?? []
+            let active = edges.filter { $0.deletedAt == nil }.sorted { $0.createdAt < $1.createdAt }
+            if let keep = active.first {
+                // Un solo arco attivo per destinazione: gli altri vanno nel cestino.
+                for duplicate in active where duplicate.id != keep.id { try? trashEdge(duplicate.id) }
+            } else if let trashed = edges.max(by: { ($0.deletedAt ?? .distantPast) < ($1.deletedAt ?? .distantPast) }) {
+                var restored = trashed
+                restored.deletedAt = nil
+                store.saveEdge(restored)
+                if Privacy.isSyncable(restored, in: store) { enqueue(.edge, trashed.id, version: trashed.version) }
+            } else {
+                _ = try? createEdge(from: nodeID, to: target, kind: .link)
+            }
+        }
+        for (target, edges) in existing where !wanted.contains(target) {
+            for edge in edges where edge.deletedAt == nil { try? trashEdge(edge.id) }
+        }
+    }
+
     public func trashEdge(_ id: UUID) throws {
         guard var edge = store.edge(id) else { throw RepositoryError.notFound }
         edge.deletedAt = now()

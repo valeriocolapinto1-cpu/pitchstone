@@ -10,19 +10,25 @@
 		0BD0774AB9F1B5DAD64907EF /* PitchstoneNotes in Frameworks */ = {isa = PBXBuildFile; productRef = 2A58D8FCE775A36EBDDA6C0C /* PitchstoneNotes */; };
 		14AB01F1D8835D2048C47B56 /* MarkdownEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7724F679D153B7B756961AE5 /* MarkdownEditor.swift */; };
 		19BC14E8FB0995A6618E632E /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 907A7B8B7E3BE6255A015B38 /* NodeDetailView.swift */; };
+		2025A527BF842129787F865B /* GraphState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9678BEF2C1BAC5B4E3B315 /* GraphState.swift */; };
 		29B1B3E9F11C2F86CFFAC620 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16405A8644771FA4E4F60459 /* HistoryView.swift */; };
 		29FED633C37F00BA1627D6E5 /* PitchstoneSync in Frameworks */ = {isa = PBXBuildFile; productRef = 844EB8D7AC29558BEC1B95F8 /* PitchstoneSync */; };
 		34AD84DF4C2DEE2B3C578034 /* MarkdownPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EA1E2F294CD8870BA0E084B /* MarkdownPreview.swift */; };
 		3A65D3BEAD6D1DE30A3A1C2C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E67BB36987AA7062939CF776 /* SettingsView.swift */; };
+		4014147E3DC2C57FA5541B9D /* GraphScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = E48B301A817A9658EB60133B /* GraphScene.swift */; };
+		577BF97A672FE7FC763313B1 /* PitchstoneGraph in Frameworks */ = {isa = PBXBuildFile; productRef = FCB2CF1029A06B8F721EA693 /* PitchstoneGraph */; };
 		6939EE790E13E16BA70F0D5B /* NotesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64E43A01FC68B3996D00EB30 /* NotesModel.swift */; };
+		6CE59C445BA12606C0C1DBA9 /* InkCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A310FD3F6F219C0D1B155DEA /* InkCodecTests.swift */; };
 		756D6A9F0D07892B229E0F58 /* PitchstoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5053F071475E3BAABF2B3372 /* PitchstoneApp.swift */; };
 		7FA4AEC5E1E278C4CBB1CDA0 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545EF4415C02A3C61EBACB1E /* MarkdownText.swift */; };
 		8313C93D5B1756560CCF80E3 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EEFD0A781A8FE61C0EADE5C /* RootView.swift */; };
 		A4450587FD94DDD6156DF89E /* TrashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E10D0258ADDED2B3CE7892 /* TrashView.swift */; };
 		A52AED7CA3D46D029C83BD45 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5733F1E743390A6407D4C92 /* NodeListView.swift */; };
 		A6D85013C380316B2A69013D /* NotesModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A01535AC82171D720E56D6 /* NotesModelTests.swift */; };
+		D34253DAEECDEC102927174B /* GraphTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6EC95C4857F8B32FE01051 /* GraphTests.swift */; };
 		D4EE802CD51B35C7CE5D2C83 /* PitchstoneStore in Frameworks */ = {isa = PBXBuildFile; productRef = 47F76884D4D4BA64718B775D /* PitchstoneStore */; };
 		E19B701B71CC48421F4BCDEA /* InkPagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B1DDBD773FCC5998DD8B7D /* InkPagesView.swift */; };
+		E4CD22D63B0C65D5854DCA74 /* GraphScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE95C1DD03B4B6D8E647AA76 /* GraphScreen.swift */; };
 		F5B1E9E1F63FD78E067593DB /* InkCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C877DDF60C53D22E75F3F36 /* InkCanvas.swift */; };
 /* End PBXBuildFile section */
 
@@ -50,11 +56,16 @@
 		7724F679D153B7B756961AE5 /* MarkdownEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownEditor.swift; sourceTree = "<group>"; };
 		907A7B8B7E3BE6255A015B38 /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
 		95B1DDBD773FCC5998DD8B7D /* InkPagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkPagesView.swift; sourceTree = "<group>"; };
+		9B9678BEF2C1BAC5B4E3B315 /* GraphState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphState.swift; sourceTree = "<group>"; };
+		A310FD3F6F219C0D1B155DEA /* InkCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkCodecTests.swift; sourceTree = "<group>"; };
 		B9324011BCB2C5A2F3594F5F /* PitchstoneTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PitchstoneTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D5733F1E743390A6407D4C92 /* NodeListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeListView.swift; sourceTree = "<group>"; };
+		DA6EC95C4857F8B32FE01051 /* GraphTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphTests.swift; sourceTree = "<group>"; };
+		E48B301A817A9658EB60133B /* GraphScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphScene.swift; sourceTree = "<group>"; };
 		E60FE387CB2B746DB955900C /* PitchstoneKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PitchstoneKit; path = PitchstoneKit; sourceTree = SOURCE_ROOT; };
 		E6499143325B76914E9EB443 /* Pitchstone.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Pitchstone.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E67BB36987AA7062939CF776 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		EE95C1DD03B4B6D8E647AA76 /* GraphScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphScreen.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -65,6 +76,7 @@
 				29FED633C37F00BA1627D6E5 /* PitchstoneSync in Frameworks */,
 				D4EE802CD51B35C7CE5D2C83 /* PitchstoneStore in Frameworks */,
 				0BD0774AB9F1B5DAD64907EF /* PitchstoneNotes in Frameworks */,
+				577BF97A672FE7FC763313B1 /* PitchstoneGraph in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -146,12 +158,23 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		82A44CE26D713EDF694E4F25 /* Graph */ = {
+			isa = PBXGroup;
+			children = (
+				E48B301A817A9658EB60133B /* GraphScene.swift */,
+				EE95C1DD03B4B6D8E647AA76 /* GraphScreen.swift */,
+				9B9678BEF2C1BAC5B4E3B315 /* GraphState.swift */,
+			);
+			path = Graph;
+			sourceTree = "<group>";
+		};
 		94E644448B0D5F8E4559CB0C /* Pitchstone */ = {
 			isa = PBXGroup;
 			children = (
 				130D7B924A14D0AE54E71CCC /* App */,
 				6435B4BA27FEFB13673BA598 /* Core */,
 				4BCF5BE8EC0AAF3BACD00B87 /* Features */,
+				82A44CE26D713EDF694E4F25 /* Graph */,
 				774BF2CC2066F3E63A650CA4 /* Resources */,
 			);
 			path = Pitchstone;
@@ -186,6 +209,8 @@
 		C8630335A702260D6C8E2EC0 /* PitchstoneTests */ = {
 			isa = PBXGroup;
 			children = (
+				DA6EC95C4857F8B32FE01051 /* GraphTests.swift */,
+				A310FD3F6F219C0D1B155DEA /* InkCodecTests.swift */,
 				39A01535AC82171D720E56D6 /* NotesModelTests.swift */,
 			);
 			path = PitchstoneTests;
@@ -236,6 +261,7 @@
 				844EB8D7AC29558BEC1B95F8 /* PitchstoneSync */,
 				47F76884D4D4BA64718B775D /* PitchstoneStore */,
 				2A58D8FCE775A36EBDDA6C0C /* PitchstoneNotes */,
+				FCB2CF1029A06B8F721EA693 /* PitchstoneGraph */,
 			);
 			productName = Pitchstone;
 			productReference = E6499143325B76914E9EB443 /* Pitchstone.app */;
@@ -286,6 +312,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D34253DAEECDEC102927174B /* GraphTests.swift in Sources */,
+				6CE59C445BA12606C0C1DBA9 /* InkCodecTests.swift in Sources */,
 				A6D85013C380316B2A69013D /* NotesModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -294,6 +322,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4014147E3DC2C57FA5541B9D /* GraphScene.swift in Sources */,
+				E4CD22D63B0C65D5854DCA74 /* GraphScreen.swift in Sources */,
+				2025A527BF842129787F865B /* GraphState.swift in Sources */,
 				29B1B3E9F11C2F86CFFAC620 /* HistoryView.swift in Sources */,
 				F5B1E9E1F63FD78E067593DB /* InkCanvas.swift in Sources */,
 				E19B701B71CC48421F4BCDEA /* InkPagesView.swift in Sources */,
@@ -567,6 +598,10 @@
 		844EB8D7AC29558BEC1B95F8 /* PitchstoneSync */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PitchstoneSync;
+		};
+		FCB2CF1029A06B8F721EA693 /* PitchstoneGraph */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PitchstoneGraph;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

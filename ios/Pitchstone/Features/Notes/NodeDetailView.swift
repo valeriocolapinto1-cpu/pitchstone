@@ -10,10 +10,16 @@ struct NodeDetailView: View {
     let nodeID: UUID
     let onOpenNode: (String, Area) -> Void
 
+    init(nodeID: UUID, initialMode: Mode = .split, onOpenNode: @escaping (String, Area) -> Void) {
+        self.nodeID = nodeID
+        self.onOpenNode = onOpenNode
+        _mode = State(initialValue: initialMode)
+    }
+
     @State private var title = ""
     @State private var text = ""
     @State private var tags = ""
-    @State private var mode: Mode = .split
+    @State private var mode: Mode
     @State private var showingHistory = false
     /// Ultimo stato salvato o caricato: si salva solo ciò che l'utente ha cambiato
     /// rispetto a qui, e si ricarica dall'archivio solo se non ci sono modifiche in sospeso.
