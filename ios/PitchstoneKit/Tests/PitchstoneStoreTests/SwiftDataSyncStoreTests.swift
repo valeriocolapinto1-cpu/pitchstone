@@ -1,0 +1,73 @@
+#if canImport(SwiftData)
+import Foundation
+import PitchstoneStore
+import PitchstoneSync
+import Testing
+
+/// Gira solo su piattaforme Apple (ci-ios). La logica di sync è testata su Linux
+/// con InMemoryStore; qui si verifica che SwiftData rispetti lo stesso contratto.
+@MainActor
+@Suite("Archivio SwiftData", .serialized)
+struct SwiftDataSyncStoreTests {
+    let store: SwiftDataSyncStore
+
+    init() throws {
+        store = SwiftDataSyncStore(container: try PitchstoneSchema.container(inMemory: true))
+    }
+
+    @Test("nodi, archi e storico")
+    func records() throws {
+        let date = Date()
+        var node = NodeRecord(type: .concept, title: "Derivata", area: .studio, tags: ["analisi"],
+                              createdAt: date, updatedAt: date, deviceID: "a")
+        store.saveNode(node)
+        node.title = "Derivata prima"
+        store.saveNode(node)
+        #expect(store.allNodes() == [node])
+
+        let edge = EdgeRecord(sourceID: node.id, targetID: node.id, kind: .manual, createdAt: date)
+        store.saveEdge(edge)
+        #expect(store.edge(edge.id) == edge)
+
+        let v1 = NodeVersionRecord(id: UUID(), nodeID: node.id, version: 1, bodyMD: "a", createdAt: date, deviceID: "a")
+        let v2 = NodeVersionRecord(id: UUID(), nodeID: node.id, version: 2, bodyMD: "b", createdAt: date, deviceID: "a")
+        store.saveVersion(v2)
+        store.saveVersion(v1)
+        store.saveVersion(v1)
+        #expect(store.versions(of: node.id) == [v1, v2])
+
+        store.deleteNode(node.id)
+        #expect(store.node(node.id) == nil)
+        #expect(store.versions(of: node.id).isEmpty)
+    }
+
+    @Test("outbox ordinata")
+    func outbox() {
+        let first = PendingChange(entity: .node, id: UUID(), baseVersion: nil, revision: 1)
+        let second = PendingChange(entity: .edge, id: UUID(), baseVersion: 3, revision: 1)
+        store.savePending(first)
+        store.savePending(second)
+        var updated = first
+        updated.revision = 2
+        store.savePending(updated)
+        #expect(store.pendingChanges() == [updated, second], "l'aggiornamento mantiene la posizione")
+        store.removePending(.node, first.id)
+        #expect(store.pendingChanges() == [second])
+    }
+
+    @Test("cursore persistente")
+    func cursor() {
+        #expect(store.cursor == 0)
+        store.cursor = 42
+        #expect(store.cursor == 42)
+    }
+
+    @Test("sync completa con SwiftData")
+    func endToEndWithRepository() async {
+        let repository = Repository(store: store, deviceID: "a")
+        let node = repository.createNode(type: .concept, title: "x", area: .studio)
+        _ = repository.createNode(type: .health, title: "privato", area: .studio)
+        #expect(store.pendingChanges().map(\.id) == [node.id])
+    }
+}
+#endif

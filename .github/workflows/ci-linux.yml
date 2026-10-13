@@ -63,9 +63,39 @@ jobs:
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.120.0
-      - name: Applica migrazioni e seed
-        run: supabase db start
+      # Database, API REST e auth (per le chiavi): il resto non serve.
+      # Va avviato tutto insieme: dopo `supabase db start`, `supabase start` non avvia altro.
+      - name: Applica migrazioni e seed, avvia l'API REST locale
+        run: supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - name: Lint dello schema
         run: supabase db lint --level warning --fail-on warning
       - name: Test dello schema
         run: supabase test db
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/worker-ai/package-lock.json
+      - name: Test end-to-end della sync (Worker → Supabase)
+        working-directory: backend/worker-ai
+        shell: bash
+        run: |
+          npm ci
+          eval "$(supabase status -o env --workdir ..)"
+          E2E_REQUIRED=1 E2E_SUPABASE_URL="$API_URL" E2E_SUPABASE_SECRET_KEY="$SECRET_KEY" E2E_SUPABASE_ANON_KEY="$ANON_KEY" \
+            npm run test:e2e -- --reporter=verbose
+
+  # Logica di sync del client: Foundation pura, gira su Linux a costo 1x.
+  swift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: swift:6.2-noble
+    defaults:
+      run:
+        working-directory: ios/PitchstoneKit
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: swift build --build-tests -Xswiftc -warnings-as-errors
+      - run: swift test --skip-build
