@@ -122,8 +122,9 @@ public final class NodeVersionEntity {
 /// Outbox: una voce per record, ordinata per `sequence`.
 @Model
 public final class OutboxEntity {
-    @Attribute(.unique) public var key: String
-    public var entityName: String
+    // Nomi lontani da quelli di NSManagedObject/KVC (key, entity, entityName).
+    @Attribute(.unique) public var outboxKey: String
+    public var kindRaw: String
     public var recordID: UUID
     public var baseVersion: Int?
     public var revision: Int
@@ -131,8 +132,8 @@ public final class OutboxEntity {
     public var sequence: Int
 
     init(_ c: PendingChange, sequence: Int) {
-        key = OutboxEntity.key(c.entity, c.id)
-        entityName = c.entity.rawValue
+        outboxKey = OutboxEntity.key(c.entity, c.id)
+        kindRaw = c.entity.rawValue
         recordID = c.id
         baseVersion = c.baseVersion
         revision = c.revision
@@ -143,18 +144,18 @@ public final class OutboxEntity {
     static func key(_ entity: Entity, _ id: UUID) -> String { "\(entity.rawValue):\(id.uuidString)" }
 
     var change: PendingChange? {
-        guard let entity = Entity(rawValue: entityName) else { return nil }
+        guard let entity = Entity(rawValue: kindRaw) else { return nil }
         return PendingChange(entity: entity, id: recordID, baseVersion: baseVersion, revision: revision, rejection: rejection)
     }
 }
 
 @Model
 public final class SyncStateEntity {
-    @Attribute(.unique) public var key: String
+    @Attribute(.unique) public var stateName: String
     public var cursor: Int64
 
     init(cursor: Int64) {
-        key = "default"
+        stateName = "default"
         self.cursor = cursor
     }
 }
