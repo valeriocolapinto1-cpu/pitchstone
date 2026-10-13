@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Node
+node_modules/
+npm-debug.log*
+coverage/
+
+# Cloudflare Worker
+.wrangler/
+.dev.vars
+
+# Supabase
+backend/supabase/.branches/
+backend/supabase/.temp/
+
+# Segreti
+.env
+.env.*
+!.env.example
