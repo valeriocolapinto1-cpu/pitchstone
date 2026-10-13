@@ -1,0 +1,5 @@
+name = "ai-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# GEMINI_API_KEY è un secret: wrangler secret put GEMINI_API_KEY
