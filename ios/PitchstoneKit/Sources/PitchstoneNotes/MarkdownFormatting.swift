@@ -40,16 +40,10 @@ public enum MarkdownFormatting {
                 return allHave ? stripped : prefix + stripped
             }
         }
-        case .bulletList: return toggleLinePrefix("- ", chars, range)
-        case .checklist: return toggleLinePrefix("- [ ] ", chars, range)
+        case .bulletList: return toggleList(chars, range, kind: .bullet)
+        case .checklist: return toggleList(chars, range, kind: .checklist)
+        case .numberedList: return toggleList(chars, range, kind: .numbered)
         case .quote: return toggleLinePrefix("> ", chars, range)
-        case .numberedList: return toggleLines(chars, range) { lines in
-            let allHave = lines.allSatisfy { numberedPrefix($0) != nil }
-            return lines.enumerated().map { index, line in
-                let stripped = numberedPrefix(line).map { String(line.dropFirst($0)) } ?? line
-                return allHave ? stripped : "\(index + 1). " + stripped
-            }
-        }
         case .link: return insertLink(chars, range)
         }
     }
@@ -98,6 +92,41 @@ public enum MarkdownFormatting {
         }
         let urlStart = range.lowerBound + label.count + 3
         return TextEdit(text: String(out), selection: urlStart..<(urlStart + placeholder.count))
+    }
+
+    // MARK: Liste
+
+    private enum ListKind { case bullet, checklist, numbered }
+
+    /// Prefisso di elenco della riga, se c'è: `- `, `- [ ] `, `- [x] `, `12. `.
+    private static func listPrefix(_ line: String) -> (kind: ListKind, length: Int)? {
+        for checkbox in ["- [ ] ", "- [x] ", "- [X] "] where line.hasPrefix(checkbox) {
+            return (.checklist, checkbox.count)
+        }
+        if line.hasPrefix("- ") { return (.bullet, 2) }
+        if let n = numberedPrefix(line) { return (.numbered, n) }
+        return nil
+    }
+
+    /// Le righe vuote restano vuote e non contano nella numerazione. Una riga con un
+    /// altro tipo di elenco cambia tipo invece di ricevere un secondo prefisso.
+    private static func toggleList(_ chars: [Character], _ range: Range<Int>, kind: ListKind) -> TextEdit {
+        toggleLines(chars, range) { lines in
+            let content = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            let allHave = !content.isEmpty && content.allSatisfy { listPrefix($0)?.kind == kind }
+            var number = 0
+            return lines.map { line in
+                guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { return line }
+                let stripped = listPrefix(line).map { String(line.dropFirst($0.length)) } ?? line
+                if allHave { return stripped }
+                number += 1
+                switch kind {
+                case .bullet: return "- " + stripped
+                case .checklist: return "- [ ] " + stripped
+                case .numbered: return "\(number). " + stripped
+                }
+            }
+        }
     }
 
     // MARK: Righe

@@ -10,7 +10,7 @@ public enum DiffLine: Hashable, Sendable {
 public enum LineDiff {
     /// Oltre questa dimensione (righe × righe) il confronto diventa "tutto tolto, tutto aggiunto",
     /// per non bloccare l'interfaccia su note enormi.
-    public static let maxCells = 4_000_000
+    public static let maxCells = 250_000
 
     public static func diff(_ old: String, _ new: String) -> [DiffLine] {
         let a = lines(old)

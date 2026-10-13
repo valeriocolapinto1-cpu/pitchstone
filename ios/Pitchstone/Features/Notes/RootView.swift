@@ -25,7 +25,7 @@ struct RootView: View {
                     }
                 }
         } detail: {
-            if let selection, notes.node(selection) != nil {
+            if let selection, let node = notes.node(selection), node.deletedAt == nil {
                 NodeDetailView(nodeID: selection) { title, area in
                     self.selection = notes.openOrCreate(titled: title, area: area)
                 }

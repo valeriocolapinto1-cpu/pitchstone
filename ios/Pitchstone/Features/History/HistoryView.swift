@@ -21,7 +21,7 @@ struct HistoryView: View {
                     NavigationLink {
                         VersionDetailView(nodeID: nodeID, version: version, previous: previous)
                     } label: {
-                        VersionRow(version: version, diff: LineDiff.summary(LineDiff.diff(previous, version.bodyMD)), isCurrent: index == 0)
+                        VersionRow(version: version, previous: previous, isCurrent: index == 0)
                     }
                 }
             }
@@ -37,8 +37,10 @@ struct HistoryView: View {
 
 private struct VersionRow: View {
     let version: NodeVersionRecord
-    let diff: (added: Int, removed: Int)
+    let previous: String
     let isCurrent: Bool
+    /// Calcolato dopo la comparsa della riga, non durante il disegno della lista.
+    @State private var diff: (added: Int, removed: Int)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -54,12 +56,17 @@ private struct VersionRow: View {
             HStack(spacing: 12) {
                 Text(version.createdAt, format: .dateTime.day().month().year().hour().minute())
                 Text(version.deviceID)
-                Text("+\(diff.added)").foregroundStyle(.green)
-                Text("−\(diff.removed)").foregroundStyle(.red)
+                if let diff {
+                    Text("+\(diff.added)").foregroundStyle(.green)
+                    Text("−\(diff.removed)").foregroundStyle(.red)
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .monospacedDigit()
+        }
+        .task(id: version.id) {
+            diff = LineDiff.summary(LineDiff.diff(previous, version.bodyMD))
         }
     }
 }

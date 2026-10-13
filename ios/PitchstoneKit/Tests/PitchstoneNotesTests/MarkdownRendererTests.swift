@@ -78,6 +78,13 @@ struct MarkdownRendererTests {
         ])])
     }
 
+    @Test("wiki link spezzato da un a capo")
+    func wikiLinkAcrossSoftBreak() {
+        #expect(MarkdownRenderer.render("vedi [[Serie\ndi Taylor]]") == [.paragraph([
+            InlineRun("vedi "), InlineRun("Serie di Taylor", link: .wiki("Serie di Taylor")),
+        ])])
+    }
+
     @Test("wiki link malformati restano testo")
     func malformedWikiLinks() {
         #expect(MarkdownRenderer.render("[[]] e [[aperto") == [.paragraph([InlineRun("[[]] e [[aperto")])])

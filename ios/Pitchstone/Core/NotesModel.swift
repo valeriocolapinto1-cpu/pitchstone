@@ -122,6 +122,32 @@ final class NotesModel {
 
     private func changed() {
         reload()
+        scheduleSync()
+    }
+
+    /// Le modifiche si sincronizzano dopo 30 s di calma, o subito con `flushSync()`:
+    /// ogni sync con un corpo cambiato crea una versione sul server, e lo storico
+    /// non deve riempirsi di micro-versioni scritte durante la digitazione.
+    static let syncDelay: Duration = .seconds(30)
+    @ObservationIgnored private var pendingSync: Task<Void, Never>?
+
+    private func scheduleSync() {
+        guard autoSync != nil else { return }
+        pendingSync?.cancel()
+        pendingSync = Task { [weak self] in
+            do {
+                try await Task.sleep(for: Self.syncDelay)
+            } catch {
+                return
+            }
+            self?.flushSync()
+        }
+    }
+
+    /// Sincronizza subito: quando si lascia un nodo o l'app va in background.
+    func flushSync() {
+        pendingSync?.cancel()
+        pendingSync = nil
         autoSync?.syncNow()
     }
 

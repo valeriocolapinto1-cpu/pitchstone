@@ -7,6 +7,10 @@ on:
     paths:
       - "ios/**"
       - ".github/workflows/ci-ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ci-ios.yml"
   workflow_dispatch:
 
 permissions:
@@ -33,18 +37,24 @@ jobs:
 
       - name: Scegli il simulatore iPad
         id: sim
+        # Il runtime non può essere più recente dell'SDK di Xcode, o xcodebuild non lo trova.
         run: |
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          echo "SDK simulatore: $sdk"
           udid=$(xcrun simctl list devices available --json | python3 -c '
           import json, sys
+          sdk = [int(x) for x in sys.argv[1].split(".")]
           devices = json.load(sys.stdin)["devices"]
+          version = lambda runtime: [int(x) for x in runtime.split("iOS-")[1].split("-")]
           ipads = [(runtime, d) for runtime, items in devices.items() if ".iOS-" in runtime
+                   and version(runtime) <= sdk
                    for d in items if d["name"].startswith("iPad")]
           if not ipads:
               sys.exit("nessun simulatore iPad disponibile")
-          runtime, device = sorted(ipads, key=lambda t: [int(x) for x in t[0].split("iOS-")[1].split("-")])[-1]
+          runtime, device = sorted(ipads, key=lambda t: version(t[0]))[-1]
           print(device["udid"], file=sys.stdout)
           print(device["name"], runtime, file=sys.stderr)
-          ')
+          ' "$sdk")
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
       - name: Test dell'app su simulatore iPad
