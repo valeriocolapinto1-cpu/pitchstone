@@ -33,12 +33,18 @@ Keep-alive: `cd tools/keepalive && npm ci && npm run lint && npm test`.
 
 ## Client iOS
 
-La logica sta nel package [ios/PitchstoneKit](ios/PitchstoneKit): `PitchstoneSync` (sync, outbox, privacy) si testa anche su Linux, `PitchstoneStore` (SwiftData, Keychain, rete) solo su macOS.
+L'app è in `ios/Pitchstone.xcodeproj`, generato con [XcodeGen](https://github.com/yonaskolb/XcodeGen) da `ios/project.yml` (dopo una modifica: `cd ios && xcodegen generate`). La logica sta nel package [ios/PitchstoneKit](ios/PitchstoneKit):
+
+- `PitchstoneSync`: sync, outbox, privacy. Si testa anche su Linux.
+- `PitchstoneNotes`: rendering Markdown, formattazione, differenze tra versioni. Si testa anche su Linux.
+- `PitchstoneStore`: SwiftData, Keychain, rete. Solo piattaforme Apple.
 
 ```sh
 cd ios/PitchstoneKit
 swift test
 ```
+
+Ogni push su `main` che tocca `ios/` produce in `ci-ios` un IPA non firmato (artefatto `Pitchstone-<commit>`), installabile sull'iPad con Sideloadly.
 
 ## Segreti richiesti
 

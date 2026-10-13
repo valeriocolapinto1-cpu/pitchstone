@@ -70,6 +70,23 @@ public final class Repository {
         try updateNode(id) { $0.deletedAt = nil }
     }
 
+    // MARK: Storico
+
+    /// Versioni accettate dal server, dalla più vecchia alla più recente.
+    public func history(of id: UUID) -> [NodeVersionRecord] {
+        store.versions(of: id)
+    }
+
+    /// Riporta il corpo di un nodo a una versione dello storico. È una modifica
+    /// normale: crea una nuova versione, quelle successive restano nello storico.
+    @discardableResult
+    public func restoreVersion(_ version: Int, of id: UUID) throws -> NodeRecord {
+        guard let old = store.versions(of: id).first(where: { $0.version == version }) else {
+            throw RepositoryError.notFound
+        }
+        return try updateNode(id) { $0.bodyMD = old.bodyMD }
+    }
+
     // MARK: Archi
 
     @discardableResult
