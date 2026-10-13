@@ -39,7 +39,7 @@ public final class SwiftDataSyncStore: SyncStore {
 
     private func outboxEntity(_ entity: Entity, _ id: UUID) -> OutboxEntity? {
         let key = OutboxEntity.key(entity, id)
-        var d = FetchDescriptor<OutboxEntity>(predicate: #Predicate { $0.key == key })
+        var d = FetchDescriptor<OutboxEntity>(predicate: #Predicate { $0.outboxKey == key })
         d.fetchLimit = 1
         return try? context.fetch(d).first
     }

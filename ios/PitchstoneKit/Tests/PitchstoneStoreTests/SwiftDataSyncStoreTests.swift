@@ -41,8 +41,8 @@ struct SwiftDataSyncStoreTests {
         #expect(store.versions(of: node.id).isEmpty)
     }
 
-    @Test("outbox ordinata e cursore persistente")
-    func outboxAndCursor() {
+    @Test("outbox ordinata")
+    func outbox() {
         let first = PendingChange(entity: .node, id: UUID(), baseVersion: nil, revision: 1)
         let second = PendingChange(entity: .edge, id: UUID(), baseVersion: 3, revision: 1)
         store.savePending(first)
@@ -53,7 +53,10 @@ struct SwiftDataSyncStoreTests {
         #expect(store.pendingChanges() == [updated, second], "l'aggiornamento mantiene la posizione")
         store.removePending(.node, first.id)
         #expect(store.pendingChanges() == [second])
+    }
 
+    @Test("cursore persistente")
+    func cursor() {
         #expect(store.cursor == 0)
         store.cursor = 42
         #expect(store.cursor == 42)
