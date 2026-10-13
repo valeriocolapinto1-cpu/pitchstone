@@ -33,6 +33,8 @@ targets:
         product: PitchstoneNotes
       - package: PitchstoneKit
         product: PitchstoneGraph
+      - package: PitchstoneKit
+        product: PitchstoneImport
     info:
       path: Pitchstone/Resources/Info.plist
       properties:

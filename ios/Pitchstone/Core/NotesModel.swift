@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import PitchstoneImport
 import PitchstoneNotes
 import PitchstoneStore
 import PitchstoneSync
@@ -64,10 +65,7 @@ final class NotesModel {
         return activeNodes.first { Self.titleKey($0.title) == key }
     }
 
-    static func titleKey(_ title: String) -> String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    }
+    static func titleKey(_ title: String) -> String { NodeTitle.key(title) }
 
     func history(of id: UUID) -> [NodeVersionRecord] { repository.history(of: id) }
 
@@ -157,6 +155,24 @@ final class NotesModel {
         return created.id
     }
 
+    // MARK: Import
+
+    /// Cosa creerebbe l'import del vault, senza toccare l'archivio.
+    func importPlan(_ contents: VaultContents, area: Area) -> VaultImportPlan {
+        let titles = store.allNodes().filter { $0.deletedAt == nil }.map(\.title)
+        return ObsidianImport.plan(contents, defaultArea: area, existingTitles: titles)
+    }
+
+    /// Crea i nodi e gli archi del vault. Le note già nell'app che citano i titoli
+    /// nuovi con `[[...]]` ricevono i loro archi.
+    @discardableResult
+    func importVault(_ plan: VaultImportPlan) -> VaultImporter.Result {
+        let result = VaultImporter.apply(plan, to: repository, store: store)
+        resyncLinks(mentioning: plan.notes.map(\.title), excluding: Set(result.created))
+        changed()
+        return result
+    }
+
     /// Collega due nodi a mano (Pencil sul grafo). Non duplica un arco già presente.
     func connect(_ a: UUID, _ b: UUID) {
         guard a != b else { return }
@@ -185,13 +201,16 @@ final class NotesModel {
     }
 
     /// Dopo una rinomina o un nodo nuovo: i nodi che citano quei titoli riallineano i loro archi.
-    private func resyncLinks(mentioning titles: [String]) {
+    private func resyncLinks(mentioning titles: [String], excluding skipped: Set<UUID> = []) {
         let keys = Set(titles.map(Self.titleKey).filter { !$0.isEmpty })
         guard !keys.isEmpty else { return }
         let index = titleIndex()
-        for node in store.allNodes() where node.deletedAt == nil && node.bodyMD.contains("[[") {
-            // Filtro veloce prima di analizzare il Markdown.
-            guard titles.contains(where: { !$0.isEmpty && node.bodyMD.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }) else { continue }
+        for node in store.allNodes() where node.deletedAt == nil && !skipped.contains(node.id) && node.bodyMD.contains("[[") {
+            // Filtro veloce prima di analizzare il Markdown; con molti titoli (un import)
+            // costerebbe più dell'analisi stessa.
+            if titles.count <= 20 {
+                guard titles.contains(where: { !$0.isEmpty && node.bodyMD.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }) else { continue }
+            }
             let mentioned = MarkdownLinks.wikiTargets(in: node.bodyMD).map(Self.titleKey)
             if mentioned.contains(where: keys.contains) { syncLinks(of: node.id, titles: index) }
         }
