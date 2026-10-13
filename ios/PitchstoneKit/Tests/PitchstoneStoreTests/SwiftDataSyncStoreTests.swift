@@ -7,7 +7,7 @@ import Testing
 /// Gira solo su piattaforme Apple (ci-ios). La logica di sync è testata su Linux
 /// con InMemoryStore; qui si verifica che SwiftData rispetti lo stesso contratto.
 @MainActor
-@Suite("Archivio SwiftData")
+@Suite("Archivio SwiftData", .serialized)
 struct SwiftDataSyncStoreTests {
     let store: SwiftDataSyncStore
 
