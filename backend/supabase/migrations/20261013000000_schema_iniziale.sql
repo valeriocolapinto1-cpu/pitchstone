@@ -146,10 +146,9 @@ create table sync_changes (
 
 -- Tabella di servizio per il keep-alive: una sola riga, nessun dato utente.
 create table keepalive (
-  id smallint primary key default 1 check (id = 1),
-  pinged_at timestamptz not null default now()
+  id smallint primary key default 1 check (id = 1)
 );
-insert into keepalive (id) values (1);
+insert into keepalive default values;
 
 alter table nodes enable row level security;
 alter table edges enable row level security;

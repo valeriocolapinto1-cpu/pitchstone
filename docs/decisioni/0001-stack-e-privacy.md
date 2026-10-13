@@ -22,7 +22,7 @@ App personale per iPad, budget zero, uso offline, dati di salute da proteggere. 
 
 **Privacy**
 - I nodi di tipo `health`, e tutto ciò che vi è collegato, restano solo su iPad. Non vanno a Supabase, al Worker o ai prompt.
-- Il server rifiuta comunque il tipo `health` e l'area `salute` tramite i check dello schema.
+- Il server rifiuta comunque il tipo `health` e l'area `salute` sui nodi tramite i check di `nodes`.
 - Nessun segreto nel repository: GitHub Secrets, secret del Worker, Keychain. I nomi sono in `.env.example`.
 
 ## Conseguenze

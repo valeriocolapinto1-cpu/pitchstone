@@ -12,11 +12,11 @@ Repository, CI, Supabase, Cloudflare Access, keep-alive, documentazione.
 - [x] Schema vuoto con RLS attiva, migrazione applicata in locale senza errori.
 - [ ] CI Linux verde su una PR, poi merge.
 - [ ] Workflow keep-alive eseguito una volta con successo.
-- [ ] Revisione del subagente completata e correzioni applicate.
+- [x] Revisione del subagente completata e correzioni applicate.
 
 ## Test
 
-- [x] Lint e test del backend in CI (`ci-linux.yml`).
+- [ ] Lint e test del backend in CI (`ci-linux.yml`).
 - [x] Il keep-alive non tocca tabelle utente (`tools/keepalive/ping.test.mjs`).
 - [x] Lo schema non contiene policy per `anon` (`backend/supabase/tests/schema.test.sql`).
 
