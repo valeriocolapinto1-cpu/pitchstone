@@ -90,6 +90,14 @@ final class GraphScene: SKScene {
     /// Nuovi dati: ricostruisce sprite, archi e cluster. `positions` è nell'ordine di `graph.nodes`.
     func show(_ graph: GraphData, positions: [CGPoint]) {
         guard positions.count == graph.nodes.count else { return }
+        // Stessa struttura e stesse posizioni (per esempio un testo salvato): bastano
+        // i dati nuovi per etichette e ricerca, senza ricostruire migliaia di sprite.
+        if graph.structureKey == self.graph.structureKey, positions == self.positions, !sprites.isEmpty {
+            self.graph = graph
+            for (i, node) in graph.nodes.enumerated() { sprites[i].color = node.graphColor }
+            updateLabels()
+            return
+        }
         self.graph = graph
         self.positions = positions
         index = SpatialIndex(positions: positions)
