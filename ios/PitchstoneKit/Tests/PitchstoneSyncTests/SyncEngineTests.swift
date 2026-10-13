@@ -292,6 +292,25 @@ struct SyncEngineTests {
         #expect(b.store.node(keep.id) != nil)
     }
 
+    @Test("ripristino di una versione dello storico")
+    func restoreVersion() async throws {
+        let a = Device("ipad-a", server: server)
+        let b = Device("ipad-b", server: server)
+        let node = a.repository.createNode(type: .concept, title: "T", body: "prima", area: .studio)
+        _ = await a.engine.sync()
+        try a.repository.updateNode(node.id) { $0.bodyMD = "seconda" }
+        _ = await a.engine.sync()
+
+        #expect(a.repository.history(of: node.id).map(\.bodyMD) == ["prima", "seconda"])
+        try a.repository.restoreVersion(1, of: node.id)
+        #expect(a.store.node(node.id)?.bodyMD == "prima")
+        _ = await a.engine.sync()
+        _ = await b.engine.sync()
+        #expect(b.store.node(node.id)?.bodyMD == "prima")
+        #expect(b.repository.history(of: node.id).map(\.bodyMD) == ["prima", "seconda", "prima"])
+        #expect(throws: RepositoryError.notFound) { try a.repository.restoreVersion(9, of: node.id) }
+    }
+
     @Test("pull a pagine")
     func pagedPull() async throws {
         let a = Device("ipad-a", server: server)

@@ -48,11 +48,14 @@ public enum AccessKeychain {
 @MainActor
 public final class AutoSync {
     private let engine: SyncEngine
+    private let onFinish: @MainActor (SyncOutcome) -> Void
     private let monitor = NWPathMonitor()
-    private var online = false
+    public private(set) var online = false
 
-    public init(engine: SyncEngine) {
+    /// `onFinish` riceve l'esito di ogni sincronizzazione avviata da qui.
+    public init(engine: SyncEngine, onFinish: @escaping @MainActor (SyncOutcome) -> Void = { _ in }) {
         self.engine = engine
+        self.onFinish = onFinish
     }
 
     public func start() {
@@ -71,7 +74,10 @@ public final class AutoSync {
     /// Da chiamare dopo una modifica locale o al ritorno in primo piano.
     public func syncNow() {
         guard online else { return }
-        Task { await engine.sync() }
+        Task {
+            let outcome = await engine.sync()
+            onFinish(outcome)
+        }
     }
 
     private func update(online: Bool) {
