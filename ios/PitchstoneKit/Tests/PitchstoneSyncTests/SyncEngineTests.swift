@@ -173,11 +173,11 @@ struct SyncEngineTests {
         #expect(a.store.node(node.id)?.type == .concept)
     }
 
-    @Test("una modifica rifiutata non blocca l'outbox")
-    func rejectedChangeDoesNotBlock() async throws {
+    @Test("una modifica rifiutata resta parcheggiata e riparte quando il nodo arriva")
+    func rejectedChangeIsParked() async throws {
         let a = Device("ipad-a", server: server)
         let node = a.repository.createNode(type: .concept, title: "ok", area: .studio)
-        // Arco verso un nodo che il server non ha: simulato con un nodo solo locale.
+        // Nodo locale senza voce in outbox: il server non lo conosce e rifiuta l'arco.
         let ghost = NodeRecord(type: .concept, title: "fantasma", area: .studio,
                                createdAt: Date(), updatedAt: Date(), deviceID: "x")
         a.store.saveNode(ghost)
@@ -185,8 +185,70 @@ struct SyncEngineTests {
 
         _ = await a.engine.sync()
         #expect(a.engine.rejections.map(\.id) == [edge.id])
+        #expect(server.node(node.id) != nil, "il rifiuto non blocca le altre modifiche")
+
+        // Una nuova sync non lo reinvia e non dimentica il rifiuto.
+        _ = await a.engine.sync()
+        #expect(a.engine.rejections.map(\.id) == [edge.id])
+        #expect(a.store.edge(edge.id) != nil)
+
+        // Quando il nodo mancante arriva sul server, l'arco riparte.
+        try a.repository.updateNode(ghost.id) { $0.title = "non più fantasma" }
+        _ = await a.engine.sync()
+        #expect(a.engine.rejections.isEmpty)
         #expect(a.store.pendingChanges().isEmpty)
-        #expect(server.node(node.id) != nil)
+        #expect(a.store.edge(edge.id)?.version == 1)
+    }
+
+    @Test("un nodo reso sensibile durante il primo push non viene sovrascritto")
+    func sensitiveDuringFirstPush() async throws {
+        let a = Device("ipad-a", server: server)
+        let node = a.repository.createNode(type: .concept, title: "x", body: "pubblico", area: .studio)
+        let repository = a.repository
+        a.transport.beforePush = { @MainActor in
+            _ = try? repository.updateNode(node.id) {
+                $0.area = .salute
+                $0.bodyMD = "diagnosi"
+            }
+        }
+        _ = await a.engine.sync()
+        a.transport.beforePush = nil
+        _ = await a.engine.sync()
+
+        let local = try #require(a.store.node(node.id))
+        #expect(local.area == .salute)
+        #expect(local.bodyMD == "diagnosi")
+        #expect(server.node(node.id)?.bodyMD == "pubblico", "il testo sensibile non lascia il dispositivo")
+    }
+
+    @Test("un dispositivo nuovo riceve tutto lo storico")
+    func freshDeviceGetsFullHistory() async throws {
+        let a = Device("ipad-a", server: server)
+        let node = a.repository.createNode(type: .concept, title: "T", body: "v1", area: .studio)
+        _ = await a.engine.sync()
+        try a.repository.updateNode(node.id) { $0.bodyMD = "v2" }
+        _ = await a.engine.sync()
+        try a.repository.updateNode(node.id) { $0.bodyMD = "v3" }
+        _ = await a.engine.sync()
+
+        let b = Device("ipad-b", server: server)
+        _ = await b.engine.sync()
+        #expect(b.store.versions(of: node.id).map(\.bodyMD) == ["v1", "v2", "v3"])
+    }
+
+    @Test("conflitto sul solo titolo: il corpo non si duplica")
+    func titleOnlyConflict() async throws {
+        let a = Device("ipad-a", server: server)
+        let b = Device("ipad-b", server: server)
+        let node = a.repository.createNode(type: .concept, title: "T", body: "base", area: .studio)
+        _ = await a.engine.sync()
+        _ = await b.engine.sync()
+        try a.repository.updateNode(node.id) { $0.bodyMD = "nuovo da A" }
+        try b.repository.updateNode(node.id) { $0.title = "Titolo di B" }
+        _ = await a.engine.sync()
+        _ = await b.engine.sync()
+        #expect(server.node(node.id)?.bodyMD == "nuovo da A")
+        #expect(server.node(node.id)?.title == "Titolo di B")
     }
 
     @Test("cestino: ripristino sincronizzato, eliminazione definitiva dopo 30 giorni")

@@ -7,9 +7,12 @@ import SwiftData
 /// un crash non deve perdere voci dell'outbox.
 @MainActor
 public final class SwiftDataSyncStore: SyncStore {
+    // Il contesto non tiene in vita il container: va trattenuto qui.
+    private let container: ModelContainer
     private let context: ModelContext
 
     public init(container: ModelContainer) {
+        self.container = container
         context = container.mainContext
         context.autosaveEnabled = false
     }
@@ -119,6 +122,7 @@ public final class SwiftDataSyncStore: SyncStore {
         if let existing = outboxEntity(change.entity, change.id) {
             existing.baseVersion = change.baseVersion
             existing.revision = change.revision
+            existing.rejection = change.rejection
         } else {
             var d = FetchDescriptor<OutboxEntity>(sortBy: [SortDescriptor(\.sequence, order: .reverse)])
             d.fetchLimit = 1
