@@ -1,10 +1,11 @@
-#if canImport(PencilKit) && canImport(SwiftData)
 import Foundation
 import PencilKit
 import PitchstoneStore
 import PitchstoneSync
 import Testing
 
+// Qui e non nel pacchetto: PencilKit salva il proprio stato nelle preferenze
+// dell'app, e nel runner di `swift test` su macOS (senza bundle id) va in crash.
 @Suite("Serializzazione del disegno")
 struct InkCodecTests {
     /// Un tratto a penna con punti, pressione e inclinazione, come quelli della Pencil.
@@ -67,4 +68,3 @@ struct InkCodecTests {
         #expect(store.inkPage(page.id) == nil)
     }
 }
-#endif
