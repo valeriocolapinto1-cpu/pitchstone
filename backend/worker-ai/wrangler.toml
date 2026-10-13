@@ -9,5 +9,13 @@ SUPABASE_URL = ""          # https://<progetto>.supabase.co
 ACCESS_TEAM_DOMAIN = ""    # https://<team>.cloudflareaccess.com
 ACCESS_AUD = ""            # AUD tag dell'applicazione Access
 
+# Anteprime dei branch (Workers Builds esegue `wrangler preview` fuori da main):
+# valori vuoti di proposito, così un'anteprima non raggiunge mai Supabase di
+# produzione e /sync/* resta chiuso. Funziona solo /health.
+[previews.vars]
+SUPABASE_URL = ""
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
+
 # Secret: wrangler secret put GEMINI_API_KEY
 #         wrangler secret put SUPABASE_SECRET_KEY

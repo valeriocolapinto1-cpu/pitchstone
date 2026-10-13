@@ -50,5 +50,5 @@ Solo nomi; i valori non vanno mai nel repository (vedi [.env.example](.env.examp
 | `SUPABASE_ANON_KEY` | GitHub Secrets (keep-alive) |
 | `GEMINI_API_KEY` | Secret del Worker Cloudflare (`wrangler secret put`) |
 | `SUPABASE_SECRET_KEY` | Secret del Worker Cloudflare (`wrangler secret put`) |
-| `SUPABASE_URL`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | `[vars]` di `backend/worker-ai/wrangler.toml` (valori pubblici) |
+| `SUPABASE_URL`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | `[vars]` di `backend/worker-ai/wrangler.toml` (valori pubblici); `[previews.vars]` resta vuoto, così le anteprime dei branch non raggiungono la produzione |
 | `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` | Keychain dell'iPad |
