@@ -18,7 +18,7 @@ Modello dati in SwiftData, outbox, pull e push con Supabase, versioni dei nodi, 
 - [x] Test unitari sul sync (`ios/PitchstoneKit/Tests`, `backend/supabase/tests/sync.test.sql`).
 - [x] Test di conflitto con due versioni (Swift, pgTAP, end-to-end).
 - [x] Verifica del JWT di Access e filtro salute nel Worker (`backend/worker-ai/test`).
-- [ ] Test dell'archivio SwiftData su macOS (`ci-ios`, gira su `main` o manualmente).
+- [x] Test dell'archivio SwiftData su macOS (`ci-ios`, verde su `fase-1-sync`).
 
 ## Cosa c'è
 
