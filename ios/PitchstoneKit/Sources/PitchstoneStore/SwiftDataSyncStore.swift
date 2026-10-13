@@ -1,0 +1,154 @@
+#if canImport(SwiftData)
+import Foundation
+import PitchstoneSync
+import SwiftData
+
+/// Implementazione di `SyncStore` su SwiftData. Salva dopo ogni operazione:
+/// un crash non deve perdere voci dell'outbox.
+@MainActor
+public final class SwiftDataSyncStore: SyncStore {
+    private let context: ModelContext
+
+    public init(container: ModelContainer) {
+        context = container.mainContext
+        context.autosaveEnabled = false
+    }
+
+    private func save() {
+        do {
+            try context.save()
+        } catch {
+            assertionFailure("SwiftData save: \(error)")
+        }
+    }
+
+    private func nodeEntity(_ id: UUID) -> NodeEntity? {
+        var d = FetchDescriptor<NodeEntity>(predicate: #Predicate { $0.id == id })
+        d.fetchLimit = 1
+        return try? context.fetch(d).first
+    }
+
+    private func edgeEntity(_ id: UUID) -> EdgeEntity? {
+        var d = FetchDescriptor<EdgeEntity>(predicate: #Predicate { $0.id == id })
+        d.fetchLimit = 1
+        return try? context.fetch(d).first
+    }
+
+    private func outboxEntity(_ entity: Entity, _ id: UUID) -> OutboxEntity? {
+        let key = OutboxEntity.key(entity, id)
+        var d = FetchDescriptor<OutboxEntity>(predicate: #Predicate { $0.key == key })
+        d.fetchLimit = 1
+        return try? context.fetch(d).first
+    }
+
+    // MARK: Nodi e archi
+
+    public func node(_ id: UUID) -> NodeRecord? { nodeEntity(id)?.record }
+    public func edge(_ id: UUID) -> EdgeRecord? { edgeEntity(id)?.record }
+
+    public func allNodes() -> [NodeRecord] {
+        let d = FetchDescriptor<NodeEntity>(sortBy: [SortDescriptor(\.createdAt)])
+        return ((try? context.fetch(d)) ?? []).compactMap(\.record)
+    }
+
+    public func allEdges() -> [EdgeRecord] {
+        let d = FetchDescriptor<EdgeEntity>(sortBy: [SortDescriptor(\.createdAt)])
+        return ((try? context.fetch(d)) ?? []).compactMap(\.record)
+    }
+
+    public func saveNode(_ node: NodeRecord) {
+        if let existing = nodeEntity(node.id) {
+            existing.update(from: node)
+        } else {
+            context.insert(NodeEntity(node))
+        }
+        save()
+    }
+
+    public func saveEdge(_ edge: EdgeRecord) {
+        if let existing = edgeEntity(edge.id) {
+            existing.update(from: edge)
+        } else {
+            context.insert(EdgeEntity(edge))
+        }
+        save()
+    }
+
+    public func deleteNode(_ id: UUID) {
+        if let entity = nodeEntity(id) { context.delete(entity) }
+        try? context.delete(model: NodeVersionEntity.self, where: #Predicate { $0.nodeID == id })
+        save()
+    }
+
+    public func deleteEdge(_ id: UUID) {
+        if let entity = edgeEntity(id) { context.delete(entity) }
+        save()
+    }
+
+    // MARK: Storico
+
+    public func versions(of nodeID: UUID) -> [NodeVersionRecord] {
+        let d = FetchDescriptor<NodeVersionEntity>(
+            predicate: #Predicate { $0.nodeID == nodeID }, sortBy: [SortDescriptor(\.version)])
+        return ((try? context.fetch(d)) ?? []).map(\.record)
+    }
+
+    public func saveVersion(_ version: NodeVersionRecord) {
+        let nodeID = version.nodeID
+        let number = version.version
+        let id = version.id
+        try? context.delete(
+            model: NodeVersionEntity.self,
+            where: #Predicate { $0.id == id || ($0.nodeID == nodeID && $0.version == number) })
+        context.insert(NodeVersionEntity(version))
+        save()
+    }
+
+    // MARK: Outbox
+
+    public func pendingChanges() -> [PendingChange] {
+        let d = FetchDescriptor<OutboxEntity>(sortBy: [SortDescriptor(\.sequence)])
+        return ((try? context.fetch(d)) ?? []).compactMap(\.change)
+    }
+
+    public func pendingChange(_ entity: Entity, _ id: UUID) -> PendingChange? {
+        outboxEntity(entity, id)?.change
+    }
+
+    public func savePending(_ change: PendingChange) {
+        if let existing = outboxEntity(change.entity, change.id) {
+            existing.baseVersion = change.baseVersion
+            existing.revision = change.revision
+        } else {
+            var d = FetchDescriptor<OutboxEntity>(sortBy: [SortDescriptor(\.sequence, order: .reverse)])
+            d.fetchLimit = 1
+            let last = (try? context.fetch(d).first?.sequence) ?? 0
+            context.insert(OutboxEntity(change, sequence: last + 1))
+        }
+        save()
+    }
+
+    public func removePending(_ entity: Entity, _ id: UUID) {
+        if let existing = outboxEntity(entity, id) {
+            context.delete(existing)
+            save()
+        }
+    }
+
+    // MARK: Cursore
+
+    public var cursor: Int64 {
+        get {
+            (try? context.fetch(FetchDescriptor<SyncStateEntity>()).first?.cursor) ?? 0
+        }
+        set {
+            if let state = try? context.fetch(FetchDescriptor<SyncStateEntity>()).first {
+                state.cursor = newValue
+            } else {
+                context.insert(SyncStateEntity(cursor: newValue))
+            }
+            save()
+        }
+    }
+}
+#endif
