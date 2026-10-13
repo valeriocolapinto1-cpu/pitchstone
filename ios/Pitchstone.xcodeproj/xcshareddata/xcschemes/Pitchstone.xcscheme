@@ -50,6 +50,17 @@
                ReferencedContainer = "container:Pitchstone.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "3986B355BF3F547654509F1F"
+               BuildableName = "PitchstoneUITests.xctest"
+               BlueprintName = "PitchstoneUITests"
+               ReferencedContainer = "container:Pitchstone.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
          <CommandLineArgument

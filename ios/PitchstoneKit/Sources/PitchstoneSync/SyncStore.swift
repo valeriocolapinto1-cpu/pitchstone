@@ -33,6 +33,14 @@ public protocol SyncStore: AnyObject {
 
     /// Ultimo server_seq ricevuto.
     var cursor: Int64 { get set }
+
+    /// Esegue molte modifiche come un'unica transazione (per esempio un import):
+    /// un solo salvataggio alla fine invece di uno per record.
+    func performBatch(_ body: () -> Void)
+}
+
+extension SyncStore {
+    public func performBatch(_ body: () -> Void) { body() }
 }
 
 @MainActor
@@ -84,19 +92,29 @@ public final class InMemoryStore: SyncStore {
 
     public func pendingChanges() -> [PendingChange] { outbox }
 
+    /// Chiavi presenti nell'outbox: con migliaia di voci (un import) le ricerche
+    /// di voci assenti, le più frequenti, non scorrono tutto l'array.
+    private var outboxKeys = Set<String>()
+
+    private static func key(_ entity: Entity, _ id: UUID) -> String { "\(entity.rawValue)/\(id)" }
+
     public func pendingChange(_ entity: Entity, _ id: UUID) -> PendingChange? {
-        outbox.first { $0.entity == entity && $0.id == id }
+        guard outboxKeys.contains(Self.key(entity, id)) else { return nil }
+        return outbox.first { $0.entity == entity && $0.id == id }
     }
 
     public func savePending(_ change: PendingChange) {
-        if let index = outbox.firstIndex(where: { $0.entity == change.entity && $0.id == change.id }) {
+        if outboxKeys.contains(Self.key(change.entity, change.id)),
+           let index = outbox.firstIndex(where: { $0.entity == change.entity && $0.id == change.id }) {
             outbox[index] = change
         } else {
             outbox.append(change)
+            outboxKeys.insert(Self.key(change.entity, change.id))
         }
     }
 
     public func removePending(_ entity: Entity, _ id: UUID) {
+        guard outboxKeys.remove(Self.key(entity, id)) != nil else { return }
         outbox.removeAll { $0.entity == entity && $0.id == id }
     }
 }

@@ -7,6 +7,7 @@ struct RootView: View {
     @State private var selection: UUID?
     @State private var showingTrash = false
     @State private var showingSettings = false
+    @State private var showingImport = false
     @State private var showingGraph = false
     @State private var graphState = GraphState()
     /// Nodo aperto dal grafo, in un foglio sopra il grafo.
@@ -39,6 +40,10 @@ struct RootView: View {
                     HStack {
                         Button { showingTrash = true } label: {
                             Label("Cestino", systemImage: "trash")
+                        }
+                        .labelStyle(.iconOnly)
+                        Button { showingImport = true } label: {
+                            Label("Importa da Obsidian", systemImage: "square.and.arrow.down")
                         }
                         .labelStyle(.iconOnly)
                         Spacer()
@@ -95,6 +100,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
+        }
+        .sheet(isPresented: $showingImport) {
+            ImportVaultView()
         }
         .alert(
             "Operazione non riuscita",
