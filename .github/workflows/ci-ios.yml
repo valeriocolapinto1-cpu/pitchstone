@@ -7,65 +7,86 @@ on:
     paths:
       - "ios/**"
       - ".github/workflows/ci-ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ci-ios.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-ios-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  detect:
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      has-project: ${{ steps.check.outputs.has-project }}
-      has-package: ${{ steps.check.outputs.has-package }}
+  # Un solo job: ogni avvio di un runner macOS costa minuti.
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - id: check
+      - run: xcodebuild -version && swift --version
+
+      # Include lo strato SwiftData, che su Linux non esiste.
+      - name: Test del package
+        run: swift test --package-path ios/PitchstoneKit
+
+      - name: Scegli il simulatore iPad
+        id: sim
+        # Il runtime non può essere più recente dell'SDK di Xcode, o xcodebuild non lo trova.
         run: |
-          if [ ! -d ios ]; then
-            echo "::error::Cartella ios/ assente"
-            exit 1
-          fi
-          if [ -d ios/Pitchstone.xcodeproj ]; then
-            echo "has-project=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has-project=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Nessun progetto Xcode: build saltata"
-          fi
-          if [ -f ios/PitchstoneKit/Package.swift ]; then
-            echo "has-package=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has-package=false" >> "$GITHUB_OUTPUT"
-          fi
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          echo "SDK simulatore: $sdk"
+          udid=$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          sdk = [int(x) for x in sys.argv[1].split(".")]
+          devices = json.load(sys.stdin)["devices"]
+          version = lambda runtime: [int(x) for x in runtime.split("iOS-")[1].split("-")]
+          ipads = [(runtime, d) for runtime, items in devices.items() if ".iOS-" in runtime
+                   and version(runtime) <= sdk
+                   for d in items if d["name"].startswith("iPad")]
+          if not ipads:
+              sys.exit("nessun simulatore iPad disponibile")
+          runtime, device = sorted(ipads, key=lambda t: version(t[0]))[-1]
+          print(device["udid"], file=sys.stdout)
+          print(device["name"], runtime, file=sys.stderr)
+          ' "$sdk")
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
-  # Test del package su macOS: include lo strato SwiftData, che su Linux non esiste.
-  package:
-    needs: detect
-    if: needs.detect.outputs.has-package == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: swift --version
-      - run: swift test --package-path ios/PitchstoneKit
-
-  # Gira su macOS (costo 10x) solo quando il progetto esiste.
-  build:
-    needs: detect
-    if: needs.detect.outputs.has-project == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - run: >
-          xcodebuild build
+      - name: Test dell'app su simulatore iPad
+        run: >
+          xcodebuild test
           -project ios/Pitchstone.xcodeproj
           -scheme Pitchstone
-          -destination 'generic/platform=iOS Simulator'
+          -destination "id=${{ steps.sim.outputs.udid }}"
+          -skipMacroValidation
+          -skipPackagePluginValidation
+          CODE_SIGNING_ALLOWED=NO
+
+      # IPA non firmato da installare con Sideloadly (ARCHITETTURA.md, sezione 11).
+      - name: IPA non firmato
+        if: github.ref == 'refs/heads/main'
+        run: |
+          xcodebuild build \
+            -project ios/Pitchstone.xcodeproj \
+            -scheme Pitchstone \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Pitchstone.app Payload/
+          zip -qry Pitchstone.ipa Payload
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: github.ref == 'refs/heads/main'
+        with:
+          name: Pitchstone-${{ github.sha }}
+          path: Pitchstone.ipa
+          retention-days: 14
+          if-no-files-found: error

@@ -1,0 +1,77 @@
+# Progetto Xcode generato con XcodeGen 2.46.0: dopo una modifica a questo file
+# eseguire `xcodegen generate` in ios/ e versionare Pitchstone.xcodeproj.
+name: Pitchstone
+options:
+  bundleIdPrefix: app.pitchstone
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  developmentLanguage: it
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+packages:
+  PitchstoneKit:
+    path: PitchstoneKit
+targets:
+  Pitchstone:
+    type: application
+    platform: iOS
+    sources:
+      - path: Pitchstone
+        excludes: ["**/.gitkeep"]
+    dependencies:
+      - package: PitchstoneKit
+        product: PitchstoneSync
+      - package: PitchstoneKit
+        product: PitchstoneStore
+      - package: PitchstoneKit
+        product: PitchstoneNotes
+    info:
+      path: Pitchstone/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Pitchstone
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: it
+        CFBundleLocalizations: [it, en]
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          # Una sola finestra: due finestre sullo stesso nodo si sovrascriverebbero.
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.pitchstone.ipad
+        TARGETED_DEVICE_FAMILY: "2"
+        SUPPORTS_MACCATALYST: NO
+  PitchstoneTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [PitchstoneTests]
+    dependencies:
+      - target: Pitchstone
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.pitchstone.ipad.tests
+        TARGETED_DEVICE_FAMILY: "2"
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Pitchstone:
+    build:
+      targets:
+        Pitchstone: all
+    test:
+      targets: [PitchstoneTests]
+      commandLineArguments:
+        "-inMemoryStore": true
