@@ -1,6 +1,6 @@
 # Fase 2: editor e penna
 
-Stato: in revisione. Parte 1 (progetto, editor Markdown, storico) completata con #4; parte 2 (penna) in revisione.
+Stato: completata con #5.
 
 ## Obiettivo
 
