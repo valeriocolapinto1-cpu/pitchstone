@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import worker, { type Env } from "../src/index";
 import { resetCertsCache } from "../src/access";
+import { emptyStorageTrash } from "../src/storage";
 
 const url = process.env.E2E_SUPABASE_URL;
 const secretKey = process.env.E2E_SUPABASE_SECRET_KEY;
@@ -117,6 +118,49 @@ describe.skipIf(!url || !secretKey || !anonKey)("sync end-to-end", () => {
       device_id: "ipad-a",
       changes: [{ entity: "node", base_version: 3, data: node("", { deleted_at: "2000-01-01T00:00:00Z" }) }],
     });
+  });
+
+  it("un allegato in due parti va e torna dal bucket privato, poi viene cancellato", async () => {
+    const attachmentID = crypto.randomUUID();
+    const parts = [new Uint8Array(70_000).map((_, i) => i % 251), new Uint8Array(1_000).fill(7)];
+    for (const [i, bytes] of parts.entries()) {
+      const path = `${attachmentID}/part-${String(i).padStart(3, "0")}`;
+      const signed = await post("/storage/sign", { action: "upload", path });
+      expect(signed.method).toBe("PUT");
+      const put = await realFetch(signed.url, { method: "PUT", body: bytes, headers: { "content-type": "application/octet-stream" } });
+      expect(put.ok).toBe(true);
+    }
+    // Il bucket è privato: senza URL firmato non si legge.
+    const direct = await realFetch(`${url}/storage/v1/object/public/attachments/${attachmentID}/part-000`);
+    expect(direct.ok).toBe(false);
+
+    for (const [i, bytes] of parts.entries()) {
+      const signed = await post("/storage/sign", { action: "download", path: `${attachmentID}/part-${String(i).padStart(3, "0")}` });
+      const got = new Uint8Array(await (await realFetch(signed.url)).arrayBuffer());
+      expect(got).toEqual(bytes);
+    }
+
+    // Riga dell'allegato, cestino scaduto, purge e pulizia del bucket.
+    const hex = "ab".repeat(32);
+    const pushed = await post("/sync/push", {
+      device_id: "ipad-a",
+      changes: [{ entity: "attachment", base_version: null, data: {
+        id: attachmentID, node_id: null, kind: "pdf", storage_path: attachmentID, size_bytes: 71_000, sha256: hex,
+        file_name: "prova.pdf", part_count: 2, deleted_at: "2000-01-01T00:00:00Z" } }],
+    });
+    expect(pushed.results[0].status).toBe("created");
+    const rpcHeaders = { apikey: secretKey ?? "", "content-type": "application/json" };
+    expect((await realFetch(`${url}/rest/v1/rpc/purge_trash`, { method: "POST", headers: rpcHeaders, body: "{}" })).ok).toBe(true);
+    expect(await emptyStorageTrash({ url: url ?? "", secretKey: secretKey ?? "" })).toBeGreaterThanOrEqual(1);
+    const gone = await worker.fetch(
+      new Request("https://ai-proxy.example/storage/sign", {
+        method: "POST",
+        body: JSON.stringify({ action: "download", path: `${attachmentID}/part-000` }),
+        headers: { "cf-access-jwt-assertion": token },
+      }) as Request<unknown, IncomingRequestCfProperties>,
+      env,
+    );
+    expect(gone.status).toBe(404);
   });
 
   it("la chiave pubblica non può chiamare la sync direttamente", async () => {

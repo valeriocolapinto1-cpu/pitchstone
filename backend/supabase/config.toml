@@ -6,3 +6,12 @@ major_version = 17
 [db.seed]
 enabled = true
 sql_paths = ["./seed/*.sql"]
+
+# Bucket privato per gli allegati (ADR 0007). In produzione lo crea la migrazione.
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[storage.buckets.attachments]
+public = false
+file_size_limit = "50MiB"

@@ -1,4 +1,5 @@
 import { verifyAccessJwt } from "./access";
+import { emptyStorageTrash, signUrl, validateSign } from "./storage";
 import { BadRequest, MAX_BODY_BYTES, rpc, validatePull, validatePush } from "./sync";
 
 export interface Env {
@@ -28,7 +29,7 @@ export default {
       return Response.json({ status: "ok" });
     }
 
-    if (pathname !== "/sync/push" && pathname !== "/sync/pull") {
+    if (pathname !== "/sync/push" && pathname !== "/sync/pull" && pathname !== "/storage/sign") {
       return new Response("Not Found", { status: 404 });
     }
 
@@ -48,6 +49,10 @@ export default {
 
     try {
       const body = await readJson(request);
+      if (pathname === "/storage/sign") {
+        const { action, path } = validateSign(body);
+        return await signUrl(supabase, action, path);
+      }
       if (pathname === "/sync/push") {
         const { deviceId, changes } = validatePush(body);
         return await rpc(supabase, "sync_push", { p_device_id: deviceId, p_changes: changes });
@@ -60,5 +65,11 @@ export default {
       }
       throw error;
     }
+  },
+
+  // Ogni giorno, dopo la pulizia del cestino nel database (03:00 UTC): file degli allegati eliminati.
+  async scheduled(_controller, env, ctx): Promise<void> {
+    if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) return;
+    ctx.waitUntil(emptyStorageTrash({ url: env.SUPABASE_URL, secretKey: env.SUPABASE_SECRET_KEY }));
   },
 } satisfies ExportedHandler<Env>;

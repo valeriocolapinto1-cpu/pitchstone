@@ -63,10 +63,10 @@ jobs:
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.120.0
-      # Database, API REST e auth (per le chiavi): il resto non serve.
+      # Database, API REST, auth (per le chiavi) e storage (allegati): il resto non serve.
       # Va avviato tutto insieme: dopo `supabase db start`, `supabase start` non avvia altro.
       - name: Applica migrazioni e seed, avvia l'API REST locale
-        run: supabase start -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+        run: supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - name: Lint dello schema
         run: supabase db lint --level warning --fail-on warning
       - name: Test dello schema

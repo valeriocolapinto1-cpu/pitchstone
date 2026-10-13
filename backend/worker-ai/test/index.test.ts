@@ -195,6 +195,13 @@ describe("sync", () => {
     spy.mockRestore();
   });
 
+  it("firma le parti degli allegati solo con il token di Access", async () => {
+    const path = "30000000-0000-4000-8000-0000000000a1/part-000";
+    const unauthorized = await call("/storage/sign", { method: "POST", body: JSON.stringify({ action: "upload", path }) });
+    expect(unauthorized.status).toBe(401);
+    expect((await post("/storage/sign", { action: "upload", path: "../segreto" })).status).toBe(400);
+  });
+
   it("restituisce 503 se Supabase non è configurato", async () => {
     const request = new Request("https://ai-proxy.example/sync/pull", {
       method: "POST",
