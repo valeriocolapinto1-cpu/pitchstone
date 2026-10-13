@@ -6,6 +6,7 @@ import SwiftUI
 struct NodeDetailView: View {
     @Environment(NotesModel.self) private var notes
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.scenePhase) private var scenePhase
     let nodeID: UUID
     let onOpenNode: (String, Area) -> Void
 
@@ -14,7 +15,9 @@ struct NodeDetailView: View {
     @State private var tags = ""
     @State private var mode: Mode = .split
     @State private var showingHistory = false
-    @State private var loaded = false
+    /// Ultimo stato salvato o caricato: si salva solo ciò che l'utente ha cambiato
+    /// rispetto a qui, e si ricarica dall'archivio solo se non ci sono modifiche in sospeso.
+    @State private var baseline: Draft?
 
     enum Mode: String, CaseIterable, Identifiable {
         case write, split, preview
@@ -37,10 +40,24 @@ struct NodeDetailView: View {
                 HistoryView(nodeID: nodeID)
             }
             .onAppear(perform: load)
-            .onDisappear(perform: save)
+            .onDisappear {
+                save()
+                notes.flushSync()
+            }
+            // Ripristino dallo storico o modifica arrivata con la sync.
+            .onChange(of: notes.node(nodeID)) { _, node in
+                guard let node, draft == baseline else { return }
+                apply(node)
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active {
+                    save()
+                    notes.flushSync()
+                }
+            }
             // Salvataggio automatico dopo 0,8 s senza modifiche.
-            .task(id: Draft(title: title, text: text, tags: tags)) {
-                guard loaded else { return }
+            .task(id: draft) {
+                guard baseline != nil else { return }
                 do {
                     try await Task.sleep(for: .milliseconds(800))
                 } catch {
@@ -49,6 +66,8 @@ struct NodeDetailView: View {
                 save()
             }
     }
+
+    private var draft: Draft { Draft(title: title, text: text, tags: tags) }
 
     private struct Draft: Equatable {
         var title: String
@@ -86,7 +105,8 @@ struct NodeDetailView: View {
     private func preview(_ node: NodeRecord) -> some View {
         MarkdownPreview(text: text) { title in
             save()
-            onOpenNode(title, node.area)
+            // Da un nodo sensibile non si creano nodi sensibili per errore.
+            onOpenNode(title, node.isSensitive ? .studio : node.area)
         }
         .frame(maxWidth: .infinity)
     }
@@ -166,22 +186,28 @@ struct NodeDetailView: View {
 
     private func load() {
         guard let node = notes.node(nodeID) else { return }
+        apply(node)
+    }
+
+    private func apply(_ node: NodeRecord) {
         title = node.title
         text = node.bodyMD
         tags = node.tags.joined(separator: ", ")
-        loaded = true
+        baseline = draft
     }
 
-    /// Salva solo se qualcosa è cambiato: ogni salvataggio è una modifica da sincronizzare.
+    /// Salva solo ciò che l'utente ha cambiato: ogni salvataggio è una modifica da
+    /// sincronizzare, e uno stato vecchio non deve sovrascrivere l'archivio.
     private func save() {
-        guard loaded, let node = notes.node(nodeID) else { return }
-        let parsedTags = Self.parseTags(tags)
-        guard node.title != title || node.bodyMD != text || node.tags != parsedTags else { return }
+        guard let baseline, draft != baseline, notes.node(nodeID) != nil else { return }
+        let snapshot = draft
+        let parsedTags = Self.parseTags(snapshot.tags)
         notes.update(nodeID) {
-            $0.title = title
-            $0.bodyMD = text
+            $0.title = snapshot.title
+            $0.bodyMD = snapshot.text
             $0.tags = parsedTags
         }
+        self.baseline = snapshot
     }
 
     nonisolated static func parseTags(_ text: String) -> [String] {

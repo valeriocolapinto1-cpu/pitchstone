@@ -49,6 +49,16 @@ struct MarkdownFormattingTests {
         #expect(apply(.quote, "frase", 2..<2).text == "> frase")
     }
 
+    @Test("liste: cambio di tipo, righe vuote, checklist")
+    func listKinds() {
+        #expect(apply(.bulletList, "- [ ] x", 0..<0).text == "- x")
+        #expect(apply(.checklist, "- x", 0..<0).text == "- [ ] x")
+        #expect(apply(.checklist, "- [x] fatto", 0..<0).text == "fatto")
+        #expect(apply(.numberedList, "a\n\nb", 0..<4).text == "1. a\n\n2. b")
+        #expect(apply(.bulletList, "- a\n\n- b", 0..<8).text == "a\n\nb")
+        #expect(apply(.numberedList, "- a\n- b", 0..<7).text == "1. a\n2. b")
+    }
+
     @Test("una selezione che finisce a inizio riga non tocca quella riga")
     func selectionEndingAtLineStart() {
         #expect(apply(.bulletList, "uno\ndue", 0..<4).text == "- uno\ndue")

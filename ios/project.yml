@@ -43,7 +43,8 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIApplicationSceneManifest:
-          UIApplicationSupportsMultipleScenes: true
+          # Una sola finestra: due finestre sullo stesso nodo si sovrascriverebbero.
+          UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown

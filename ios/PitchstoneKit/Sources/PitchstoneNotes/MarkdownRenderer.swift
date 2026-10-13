@@ -107,7 +107,8 @@ public enum MarkdownRenderer {
     private static func inlines(_ children: MarkupChildren) -> [InlineRun] {
         var runs: [InlineRun] = []
         for child in children { collect(child, style: [], link: nil, into: &runs) }
-        return merge(runs.flatMap(splitWikiLinks))
+        // Prima si uniscono i frammenti: un `[[...]]` spezzato da un a capo morbido resta un link.
+        return merge(merge(runs).flatMap(splitWikiLinks))
     }
 
     private static func collect(_ markup: Markup, style: InlineStyle, link: InlineLink?, into runs: inout [InlineRun]) {

@@ -115,8 +115,19 @@ extension NodeRecord {
     var preview: String? {
         bodyMD.split(separator: "\n")
             .lazy
-            .map { $0.drop { "#>-*+ ".contains($0) }.trimmingCharacters(in: .whitespaces) }
+            .map(Self.stripLinePrefix)
             .first { !$0.isEmpty }
+    }
+
+    private static func stripLinePrefix(_ line: Substring) -> String {
+        var rest = line.drop { "#> \t".contains($0) }
+        for marker in ["- [ ] ", "- [x] ", "- [X] ", "- ", "* ", "+ "] where rest.hasPrefix(marker) {
+            rest = rest.dropFirst(marker.count)
+            break
+        }
+        let digits = rest.prefix { $0.isASCII && $0.isNumber }.count
+        if digits > 0, rest.dropFirst(digits).hasPrefix(". ") { rest = rest.dropFirst(digits + 2) }
+        return rest.trimmingCharacters(in: .whitespaces)
     }
 }
 

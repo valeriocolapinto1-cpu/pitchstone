@@ -29,9 +29,11 @@ struct SettingsView: View {
                 } header: {
                     Text("Service token di Cloudflare Access")
                 } footer: {
-                    Text(notes.hasCredentials
-                         ? "Un token è già salvato nel Keychain. Lascia vuoto per mantenerlo."
-                         : "Il token si salva solo nel Keychain di questo iPad.")
+                    if notes.hasCredentials {
+                        Text("Un token è già salvato nel Keychain. Lascia vuoto per mantenerlo.")
+                    } else {
+                        Text("Il token si salva solo nel Keychain di questo iPad.")
+                    }
                 }
                 Section {
                     LabeledContent("Dispositivo", value: notes.deviceID)
