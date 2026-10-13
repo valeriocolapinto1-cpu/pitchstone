@@ -162,11 +162,16 @@ public struct PendingChange: Equatable, Sendable {
     public var baseVersion: Int?
     /// Cresce a ogni modifica locale: serve a capire se il record è cambiato durante un push.
     public var revision: Int
+    /// Motivo del rifiuto del server. Una voce rifiutata resta in outbox ma non
+    /// viene reinviata finché il record non cambia (o, per un arco, finché un suo
+    /// estremo non arriva sul server).
+    public var rejection: String?
 
-    public init(entity: Entity, id: UUID, baseVersion: Int?, revision: Int) {
+    public init(entity: Entity, id: UUID, baseVersion: Int?, revision: Int, rejection: String? = nil) {
         self.entity = entity
         self.id = id
         self.baseVersion = baseVersion
         self.revision = revision
+        self.rejection = rejection
     }
 }

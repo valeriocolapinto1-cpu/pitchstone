@@ -123,26 +123,28 @@ public final class NodeVersionEntity {
 @Model
 public final class OutboxEntity {
     @Attribute(.unique) public var key: String
-    public var entity: String
+    public var entityName: String
     public var recordID: UUID
     public var baseVersion: Int?
     public var revision: Int
+    public var rejection: String?
     public var sequence: Int
 
     init(_ c: PendingChange, sequence: Int) {
         key = OutboxEntity.key(c.entity, c.id)
-        entity = c.entity.rawValue
+        entityName = c.entity.rawValue
         recordID = c.id
         baseVersion = c.baseVersion
         revision = c.revision
+        rejection = c.rejection
         self.sequence = sequence
     }
 
     static func key(_ entity: Entity, _ id: UUID) -> String { "\(entity.rawValue):\(id.uuidString)" }
 
     var change: PendingChange? {
-        guard let entity = Entity(rawValue: entity) else { return nil }
-        return PendingChange(entity: entity, id: recordID, baseVersion: baseVersion, revision: revision)
+        guard let entity = Entity(rawValue: entityName) else { return nil }
+        return PendingChange(entity: entity, id: recordID, baseVersion: baseVersion, revision: revision, rejection: rejection)
     }
 }
 
@@ -158,13 +160,12 @@ public final class SyncStateEntity {
 }
 
 public enum PitchstoneSchema {
-    public static let models: [any PersistentModel.Type] = [
-        NodeEntity.self, EdgeEntity.self, NodeVersionEntity.self, OutboxEntity.self, SyncStateEntity.self,
-    ]
-
     public static func container(inMemory: Bool = false) throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemory)
-        return try ModelContainer(for: Schema(models), configurations: [configuration])
+        let schema = Schema([
+            NodeEntity.self, EdgeEntity.self, NodeVersionEntity.self, OutboxEntity.self, SyncStateEntity.self,
+        ])
+        return try ModelContainer(for: schema, configurations: [configuration])
     }
 }
 #endif

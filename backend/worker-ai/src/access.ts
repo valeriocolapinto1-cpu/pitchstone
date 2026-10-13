@@ -25,6 +25,8 @@ interface JwtPayload {
 }
 
 const CERTS_TTL_MS = 60 * 60 * 1000;
+// Un token con kid sconosciuto forza al massimo un aggiornamento al minuto.
+const FORCED_REFRESH_MS = 60 * 1000;
 let certsCache: { url: string; keys: Jwk[]; fetchedAt: number } | undefined;
 
 export function resetCertsCache(): void {
@@ -46,8 +48,9 @@ function decodeJson<T>(part: string): T {
 
 async function loadKeys(config: AccessConfig, fetchImpl: typeof fetch, forceRefresh: boolean): Promise<Jwk[]> {
   const url = `${config.teamDomain}/cdn-cgi/access/certs`;
-  if (!forceRefresh && certsCache && certsCache.url === url && Date.now() - certsCache.fetchedAt < CERTS_TTL_MS) {
-    return certsCache.keys;
+  if (certsCache && certsCache.url === url) {
+    const age = Date.now() - certsCache.fetchedAt;
+    if (age < (forceRefresh ? FORCED_REFRESH_MS : CERTS_TTL_MS)) return certsCache.keys;
   }
   const response = await fetchImpl(url);
   if (!response.ok) throw new Error(`certs ${response.status}`);

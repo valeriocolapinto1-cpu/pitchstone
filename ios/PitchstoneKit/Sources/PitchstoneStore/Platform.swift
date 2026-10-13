@@ -56,7 +56,8 @@ public final class AutoSync {
     }
 
     public func start() {
-        monitor.pathUpdateHandler = { [weak self] path in
+        // Chiamato sulla coda di rete: la closure non deve ereditare il MainActor.
+        monitor.pathUpdateHandler = { @Sendable [weak self] path in
             let satisfied = path.status == .satisfied
             Task { @MainActor in self?.update(online: satisfied) }
         }

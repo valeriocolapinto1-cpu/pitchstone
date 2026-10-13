@@ -115,10 +115,19 @@ describe("verifica di Cloudflare Access", () => {
     expect(await verifyAccessJwt(await sign(validPayload()), { teamDomain: TEAM, audience: "" })).toBe(false);
   });
 
-  it("ricarica le chiavi una volta se il kid è sconosciuto", async () => {
-    expect(await verifyAccessJwt(await sign(validPayload(), keys.privateKey, "k2"), config)).toBe(false);
-    const certCalls = upstream.mock.calls.filter(([input]) => String(input).endsWith("/certs"));
-    expect(certCalls).toHaveLength(2);
+  it("ricarica le chiavi per un kid sconosciuto, al massimo una volta al minuto", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      expect(await verifyAccessJwt(await sign(validPayload()), config)).toBe(true);
+      vi.advanceTimersByTime(2 * 60 * 1000);
+      for (let i = 0; i < 3; i++) {
+        expect(await verifyAccessJwt(await sign(validPayload(), keys.privateKey, "k2"), config)).toBe(false);
+      }
+      const certCalls = upstream.mock.calls.filter(([input]) => String(input).endsWith("/certs"));
+      expect(certCalls).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

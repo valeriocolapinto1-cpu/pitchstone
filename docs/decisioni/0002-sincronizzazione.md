@@ -22,15 +22,18 @@ L'iPad è offline-first e la fonte di verità per la lettura. Supabase è il pun
 **Push e conflitti**
 - Ogni modifica porta `base_version`, l'ultima versione del server nota al client. Il server assegna sempre la versione.
 - `base_version` uguale alla versione corrente: aggiornamento normale.
-- Diversa: conflitto. Il server crea una nuova versione con il corpo di entrambi (separati da un marcatore `<!-- conflitto: versione da … -->`), unisce i tag, prende titolo, tipo e area del client. Un nodo resta nel cestino solo se entrambe le parti lo hanno eliminato: una modifica vince su un'eliminazione concorrente.
+- Diversa: conflitto. Merge a tre vie sul corpo, rispetto al corpo della `base_version` in `node_versions`: se una sola parte l'ha cambiato vince quella; se l'hanno cambiato entrambe, la nuova versione contiene tutti e due (separati da un marcatore `<!-- conflitto: versione da … -->`). I tag si uniscono (in un conflitto un tag rimosso può tornare); titolo, tipo e area vengono dal client. Un nodo resta nel cestino solo se entrambe le parti lo hanno eliminato: una modifica vince su un'eliminazione concorrente.
 - Lo storico (`node_versions`) è scritto dal server a ogni cambio del corpo. Nessuna versione va persa.
-- Ogni modifica è applicata in un proprio savepoint: una modifica non valida viene rifiutata (`rejected`) senza bloccare le altre né l'outbox.
+- Ogni modifica è applicata in un proprio savepoint: una modifica non valida viene rifiutata (`rejected`) senza bloccare le altre.
 - Il push è idempotente: se la risposta si perde, il nuovo invio produce un merge con corpi uguali, quindi nessun duplicato.
 
 **Client (ios/PitchstoneKit)**
 - Package Swift separato dal progetto Xcode: `PitchstoneSync` (Foundation pura: record, outbox, repository, motore di sync, trasporto HTTP) si testa su Linux in `ci-linux`, a costo 1x; `PitchstoneStore` (SwiftData, Keychain, monitor di rete) si testa su macOS in `ci-ios`. L'app della fase 2 dipenderà dal package.
 - Outbox con una voce per record: le modifiche successive si fondono e la voce conserva la `base_version` di partenza.
-- Il pull non sovrascrive mai un record con modifiche locali non ancora inviate: sarà il server a unirle al push successivo.
+- Il pull non sovrascrive mai un record con modifiche locali non ancora inviate: sarà il server a unirle al push successivo. Non sovrascrive nemmeno un nodo diventato sensibile.
+- Una modifica rifiutata resta in outbox, parcheggiata con il motivo (`SyncEngine.rejections`): non viene reinviata finché il record non cambia, o finché un estremo mancante di un arco non arriva sul server. Nessun dato locale si perde.
+- In una sync ogni voce parte al massimo una volta.
+- Lo storico ricevuto è salvato anche se arriva prima del suo nodo (il nodo ha un `server_seq` più recente delle sue versioni).
 - Se un record cambia mentre il suo push è in volo, la voce resta in outbox; dopo un merge conserva la versione di partenza, così il server unisce di nuovo invece di sovrascrivere.
 - La sync parte al ritorno della rete (`AutoSync`, `NWPathMonitor`) e dopo le modifiche locali.
 
@@ -41,7 +44,7 @@ L'iPad è offline-first e la fonte di verità per la lettura. Supabase è il pun
 
 **Cestino**
 - Eliminare significa impostare `deleted_at`; il ripristino lo riporta a null. Entrambi si sincronizzano.
-- Dopo 30 giorni `purge_trash()` elimina definitivamente nodi, archi collegati e storico. Gira ogni giorno alle 03:00 UTC con `pg_cron`. Le eliminazioni definitive sono registrate in `purged` e arrivano ai client con il pull; il client applica la stessa regola in locale, anche ai nodi di salute.
+- Dopo 30 giorni `purge_trash()` (con lo stesso advisory lock delle scritture, così un ripristino concorrente non va perso) elimina definitivamente nodi, archi collegati e storico. Gira ogni giorno alle 03:00 UTC con `pg_cron`. Le eliminazioni definitive sono registrate in `purged` e arrivano ai client con il pull; il client applica la stessa regola in locale, anche ai nodi di salute.
 
 ## Conseguenze
 

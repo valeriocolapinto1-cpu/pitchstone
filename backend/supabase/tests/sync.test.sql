@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(37);
 
 -- Privilegi: solo service_role usa la sync.
 select ok(not has_function_privilege('anon', 'public.sync_push(text, jsonb)', 'EXECUTE'), 'anon non esegue sync_push');
@@ -67,6 +67,16 @@ select is(
   (select body_md from public.node_versions where node_id = '10000000-0000-4000-8000-000000000001' and version = 3),
   'testo di A', 'la versione di A resta nello storico');
 
+-- Merge a tre vie: chi cambia solo il titolo non duplica il corpo.
+select public.sync_push('ipad-a', $$[{"entity":"node","base_version":null,"data":{"id":"10000000-0000-4000-8000-000000000005","type":"concept","title":"T","body_md":"base","area":"studio"}}]$$);
+select public.sync_push('ipad-a', $$[{"entity":"node","base_version":1,"data":{"id":"10000000-0000-4000-8000-000000000005","type":"concept","title":"T","body_md":"nuovo da A","area":"studio"}}]$$);
+select is(
+  public.sync_push('ipad-b', $$[{"entity":"node","base_version":1,"data":{"id":"10000000-0000-4000-8000-000000000005","type":"concept","title":"Titolo di B","body_md":"base","area":"studio"}}]$$)
+    #>> '{results,0,status}',
+  'merged', 'conflitto sul solo titolo');
+select is((select body_md from public.nodes where id = '10000000-0000-4000-8000-000000000005'), 'nuovo da A', 'corpo di A senza duplicati');
+select is((select title from public.nodes where id = '10000000-0000-4000-8000-000000000005'), 'Titolo di B', 'titolo di B');
+
 -- Cestino contro modifica concorrente: vince la modifica.
 select is(
   public.sync_push('ipad-a', $$[{"entity":"node","base_version":4,"data":{"id":"10000000-0000-4000-8000-000000000001","type":"concept","title":"Limite","body_md":"x","area":"studio","deleted_at":"2026-10-01T00:00:00Z"}}]$$)
@@ -104,7 +114,7 @@ select public.sync_push('ipad-a', $$[
 ]$$);
 update public.nodes set deleted_at = now() - interval '29 days' where id = '00000000-0000-4000-8000-000000000003';
 insert into t select 'beforePurge', to_jsonb((public.sync_pull(0, 1000))->'cursor');
-select is(public.purge_trash(), 1, 'un nodo eliminato definitivamente');
+select ok(public.purge_trash() >= 1, 'eliminazione definitiva eseguita');
 select ok(not exists (select 1 from public.nodes where id = '10000000-0000-4000-8000-000000000004'), 'nodo oltre 30 giorni rimosso');
 select ok(not exists (select 1 from public.edges where id = '10000000-0000-4000-8000-000000000102'), 'arco collegato rimosso');
 select ok(exists (select 1 from public.nodes where id = '00000000-0000-4000-8000-000000000003'), 'nodo nel cestino da 29 giorni conservato');

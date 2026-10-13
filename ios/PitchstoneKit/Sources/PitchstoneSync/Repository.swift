@@ -117,6 +117,7 @@ public final class Repository {
     private func enqueue(_ entity: Entity, _ id: UUID, version: Int) {
         if var pending = store.pendingChange(entity, id) {
             pending.revision += 1
+            pending.rejection = nil
             store.savePending(pending)
         } else {
             store.savePending(PendingChange(entity: entity, id: id, baseVersion: version > 0 ? version : nil, revision: 1))

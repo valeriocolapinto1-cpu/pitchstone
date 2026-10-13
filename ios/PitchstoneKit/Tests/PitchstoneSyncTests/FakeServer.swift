@@ -46,8 +46,14 @@ final class FakeServer: @unchecked Sendable {
                 status = .updated
             } else {
                 status = .merged
-                result.bodyMD = cur.bodyMD == n.bodyMD ? n.bodyMD
-                    : "\(cur.bodyMD)\n\n---\n\n<!-- conflitto: versione da \(device) -->\n\n\(n.bodyMD)"
+                let baseBody = versions.first { $0.0.nodeID == n.id && $0.0.version == base }?.0.bodyMD
+                if cur.bodyMD == n.bodyMD || n.bodyMD == baseBody || n.bodyMD.isEmpty {
+                    result.bodyMD = cur.bodyMD
+                } else if cur.bodyMD == baseBody || cur.bodyMD.isEmpty {
+                    result.bodyMD = n.bodyMD
+                } else {
+                    result.bodyMD = "\(cur.bodyMD)\n\n---\n\n<!-- conflitto: versione da \(device) -->\n\n\(n.bodyMD)"
+                }
                 result.tags = Array(Set(cur.tags + n.tags)).sorted()
                 result.deletedAt = (cur.deletedAt != nil && n.deletedAt != nil) ? max(cur.deletedAt!, n.deletedAt!) : nil
             }
@@ -129,6 +135,8 @@ final class FakeTransport: SyncTransport, @unchecked Sendable {
     }
     /// Eseguito dopo che il server ha applicato il push, prima che la risposta arrivi.
     var afterPush: (@Sendable () async -> Void)?
+    /// Eseguito prima che il server riceva il push (richiesta già partita).
+    var beforePush: (@Sendable () async -> Void)?
 
     init(server: FakeServer) {
         self.server = server
@@ -138,6 +146,7 @@ final class FakeTransport: SyncTransport, @unchecked Sendable {
         guard online else { throw URLError(.notConnectedToInternet) }
         // La richiesta deve essere codificabile come in produzione.
         _ = try WireCoding.encoder().encode(request)
+        if let beforePush { await beforePush() }
         let response = server.push(request)
         if let afterPush { await afterPush() }
         return response

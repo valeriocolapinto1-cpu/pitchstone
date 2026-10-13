@@ -8,6 +8,11 @@ const url = process.env.E2E_SUPABASE_URL;
 const secretKey = process.env.E2E_SUPABASE_SECRET_KEY;
 const anonKey = process.env.E2E_SUPABASE_ANON_KEY;
 const TEAM = "https://pitchstone.cloudflareaccess.com";
+
+// In CI il test è obbligatorio: senza variabili deve fallire, non essere saltato.
+if (process.env.E2E_REQUIRED && (!url || !secretKey || !anonKey)) {
+  throw new Error("E2E_REQUIRED: mancano E2E_SUPABASE_URL, E2E_SUPABASE_SECRET_KEY o E2E_SUPABASE_ANON_KEY");
+}
 const AUD = "aud-e2e";
 
 function b64url(data: ArrayBuffer | string): string {

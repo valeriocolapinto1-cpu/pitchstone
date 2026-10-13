@@ -61,11 +61,15 @@ create index edges_target_id on edges (target_id);
 create index nodes_deleted_at on nodes (deleted_at) where deleted_at is not null;
 create index edges_deleted_at on edges (deleted_at) where deleted_at is not null;
 
--- Unione di due corpi in conflitto: nessuna modifica va persa.
-create function merge_bodies(server_body text, client_body text, client_device text)
+-- Unione a tre vie: base è il corpo alla versione da cui è partito il client.
+-- Se una sola parte ha cambiato il corpo vince quella; se l'hanno cambiato
+-- entrambe, il risultato contiene tutte e due. Nessuna modifica va persa.
+create function merge_bodies(base_body text, server_body text, client_body text, client_device text)
 returns text language sql immutable set search_path = '' as $$
   select case
     when server_body = client_body then server_body
+    when client_body = base_body then server_body
+    when server_body = base_body then client_body
     when server_body = '' then client_body
     when client_body = '' then server_body
     else server_body || E'\n\n---\n\n<!-- conflitto: versione da ' || client_device || E' -->\n\n' || client_body
@@ -102,7 +106,9 @@ begin
   else
     -- Conflitto: il client ha modificato una versione superata.
     -- Corpo unito, tag uniti, titolo e tipo del client, eliminato solo se entrambi eliminano.
-    new_body := public.merge_bodies(cur.body_md, coalesce(d->>'body_md', ''), p_device);
+    new_body := public.merge_bodies(
+      (select v.body_md from public.node_versions v where v.node_id = cur.id and v.version = p_base),
+      cur.body_md, coalesce(d->>'body_md', ''), p_device);
     new_deleted := case
       when cur.deleted_at is not null and (d->>'deleted_at') is not null
         then greatest(cur.deleted_at, (d->>'deleted_at')::timestamptz)
@@ -244,6 +250,9 @@ declare
   n integer;
   cutoff timestamptz := now() - p_older_than;
 begin
+  -- Stesso lock delle scritture: un ripristino concorrente non può
+  -- finire tra la selezione e l'eliminazione.
+  perform pg_advisory_xact_lock(hashtext('pitchstone_sync'));
   with gone as (
     -- Gli archi che toccano un nodo eliminato vengono rimossi in cascata.
     select id from public.edges
@@ -260,9 +269,9 @@ begin
   on conflict (entity, id) do update set purged_at = now();
 
   delete from public.edges e using public.purged p
-    where p.entity = 'edge' and p.id = e.id;
+    where p.entity = 'edge' and p.id = e.id and p.purged_at = now();
   delete from public.nodes n using public.purged p
-    where p.entity = 'node' and p.id = n.id;
+    where p.entity = 'node' and p.id = n.id and p.purged_at = now() and n.deleted_at < cutoff;
   get diagnostics n = row_count;
   return n;
 end;
@@ -273,6 +282,7 @@ $$;
 revoke all on sequence sync_seq from public, anon, authenticated;
 revoke all on table purged from public, anon, authenticated;
 revoke execute on all functions in schema public from public, anon, authenticated;
+alter default privileges for role postgres in schema public revoke execute on functions from public, authenticated;
 grant execute on function sync_push(text, jsonb), sync_pull(bigint, integer), purge_trash(interval) to service_role;
 
 -- Pulizia giornaliera del cestino alle 03:00 UTC.
