@@ -13,4 +13,11 @@ public enum Privacy {
         guard let source = store.node(edge.sourceID), let target = store.node(edge.targetID) else { return false }
         return !isSensitive(source) && !isSensitive(target)
     }
+
+    /// Una pagina di disegno segue il suo nodo.
+    @MainActor
+    public static func isSyncable(_ page: InkPageRecord, in store: SyncStore) -> Bool {
+        guard let node = store.node(page.nodeID) else { return false }
+        return !isSensitive(node)
+    }
 }

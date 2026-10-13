@@ -10,12 +10,19 @@ public protocol SyncStore: AnyObject {
     func allEdges() -> [EdgeRecord]
     func saveNode(_ node: NodeRecord)
     func saveEdge(_ edge: EdgeRecord)
-    /// Elimina definitivamente il nodo e il suo storico.
+    /// Elimina definitivamente il nodo, il suo storico e le sue pagine di disegno.
     func deleteNode(_ id: UUID)
     func deleteEdge(_ id: UUID)
 
     func versions(of nodeID: UUID) -> [NodeVersionRecord]
     func saveVersion(_ version: NodeVersionRecord)
+
+    func inkPage(_ id: UUID) -> InkPageRecord?
+    /// Pagine del nodo (anche quelle nel cestino), in ordine di `pageNo`.
+    func inkPages(of nodeID: UUID) -> [InkPageRecord]
+    func allInkPages() -> [InkPageRecord]
+    func saveInkPage(_ page: InkPageRecord)
+    func deleteInkPage(_ id: UUID)
 
     /// Outbox in ordine di inserimento.
     func pendingChanges() -> [PendingChange]
@@ -33,6 +40,7 @@ public final class InMemoryStore: SyncStore {
     private var nodes: [UUID: NodeRecord] = [:]
     private var edges: [UUID: EdgeRecord] = [:]
     private var history: [UUID: [NodeVersionRecord]] = [:]
+    private var pages: [UUID: InkPageRecord] = [:]
     private var outbox: [PendingChange] = []
     public var cursor: Int64 = 0
 
@@ -48,7 +56,18 @@ public final class InMemoryStore: SyncStore {
     public func deleteNode(_ id: UUID) {
         nodes[id] = nil
         history[id] = nil
+        pages = pages.filter { $0.value.nodeID != id }
     }
+
+    public func inkPage(_ id: UUID) -> InkPageRecord? { pages[id] }
+
+    public func inkPages(of nodeID: UUID) -> [InkPageRecord] {
+        pages.values.filter { $0.nodeID == nodeID }.sorted { ($0.pageNo, $0.createdAt) < ($1.pageNo, $1.createdAt) }
+    }
+
+    public func allInkPages() -> [InkPageRecord] { pages.values.sorted { $0.createdAt < $1.createdAt } }
+    public func saveInkPage(_ page: InkPageRecord) { pages[page.id] = page }
+    public func deleteInkPage(_ id: UUID) { pages[id] = nil }
 
     public func deleteEdge(_ id: UUID) { edges[id] = nil }
 

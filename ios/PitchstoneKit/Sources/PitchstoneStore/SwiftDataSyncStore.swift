@@ -83,11 +83,49 @@ public final class SwiftDataSyncStore: SyncStore {
         if let entity = nodeEntity(id) { context.delete(entity) }
         let history = FetchDescriptor<NodeVersionEntity>(predicate: #Predicate { $0.nodeID == id })
         for version in (try? context.fetch(history)) ?? [] { context.delete(version) }
+        let pages = FetchDescriptor<InkPageEntity>(predicate: #Predicate { $0.nodeID == id })
+        for page in (try? context.fetch(pages)) ?? [] { context.delete(page) }
         save()
     }
 
     public func deleteEdge(_ id: UUID) {
         if let entity = edgeEntity(id) { context.delete(entity) }
+        save()
+    }
+
+    // MARK: Disegno
+
+    private func inkPageEntity(_ id: UUID) -> InkPageEntity? {
+        var d = FetchDescriptor<InkPageEntity>(predicate: #Predicate { $0.id == id })
+        d.fetchLimit = 1
+        return try? context.fetch(d).first
+    }
+
+    public func inkPage(_ id: UUID) -> InkPageRecord? { inkPageEntity(id)?.record }
+
+    public func inkPages(of nodeID: UUID) -> [InkPageRecord] {
+        let d = FetchDescriptor<InkPageEntity>(
+            predicate: #Predicate { $0.nodeID == nodeID },
+            sortBy: [SortDescriptor(\.pageNo), SortDescriptor(\.createdAt)])
+        return ((try? context.fetch(d)) ?? []).map(\.record)
+    }
+
+    public func allInkPages() -> [InkPageRecord] {
+        let d = FetchDescriptor<InkPageEntity>(sortBy: [SortDescriptor(\.createdAt)])
+        return ((try? context.fetch(d)) ?? []).map(\.record)
+    }
+
+    public func saveInkPage(_ page: InkPageRecord) {
+        if let existing = inkPageEntity(page.id) {
+            existing.update(from: page)
+        } else {
+            context.insert(InkPageEntity(page))
+        }
+        save()
+    }
+
+    public func deleteInkPage(_ id: UUID) {
+        if let entity = inkPageEntity(id) { context.delete(entity) }
         save()
     }
 
