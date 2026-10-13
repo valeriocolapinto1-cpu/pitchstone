@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 import PitchstoneSync
 
 /// Ricerca con filtri sul grafo: testo (titolo, corpo, tag), aree e tipi.

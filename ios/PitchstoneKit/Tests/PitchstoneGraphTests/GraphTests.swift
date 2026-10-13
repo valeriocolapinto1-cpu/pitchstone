@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 import Testing
 @testable import PitchstoneGraph
 @testable import PitchstoneSync
@@ -112,6 +115,36 @@ struct GraphLayoutTests {
         }
         let median = moved.sorted()[moved.count / 2]
         #expect(median < 60, "spostamento mediano \(median)")
+    }
+
+    @Test("nodi sovrapposti si separano")
+    func coincidentNodesSeparate() {
+        let date = Date(timeIntervalSince1970: 0)
+        // Indici uguali modulo 35, stessa area, nessun arco: il caso peggiore per una spinta periodica.
+        let nodes = (0..<36).map { i in
+            NodeRecord(id: UUID(uuid: (UInt8(i), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)), type: .concept,
+                       title: "\(i)", area: .studio, createdAt: date, updatedAt: date, deviceID: "t")
+        }
+        let graph = GraphData(nodes: nodes, edges: [])
+        let start = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, CGPoint(x: 10, y: 10)) })
+        let positions = GraphLayout().positions(for: graph, previous: start)
+        #expect(distance(positions[0], positions[35]) > 5)
+        #expect(Set(positions.map { "\(Int($0.x)),\(Int($0.y))" }).count == positions.count)
+    }
+
+    @Test("calcolo interrotto: risultato vuoto")
+    func cancellation() {
+        let (graph, _, _) = sampleGraph(count: 100)
+        #expect(GraphLayout().positions(for: graph, shouldStop: { true }).isEmpty)
+    }
+
+    @Test("indice robusto a posizioni non valide e rettangoli enormi")
+    func robustIndex() {
+        let index = SpatialIndex(positions: [CGPoint(x: Double.nan, y: 0), CGPoint(x: 1e300, y: -1e300), CGPoint(x: 5, y: 5)])
+        // Il nodo a 1e300 sta fuori dal rettangolo, quello NaN non è indicizzato: niente crash.
+        #expect(index.nodes(in: CGRect(x: -2e13, y: -2e13, width: 4e13, height: 4e13)) == [2])
+        #expect(index.nearest(to: CGPoint(x: 5, y: 6), within: 3) == 2)
+        #expect(index.nodes(in: CGRect(x: Double.infinity, y: 0, width: 1, height: 1)).isEmpty)
     }
 
     @Test("grafo vuoto e con un nodo")
@@ -295,5 +328,13 @@ struct LinkEdgeTests {
         repository.syncLinkEdges(from: a.id, to: [b.id, c.id])
         #expect(Set(links()) == [b.id, c.id])
         #expect(store.allEdges().filter { $0.kind == .link }.count == 2, "l'arco verso B è ripristinato, non duplicato")
+
+        // Doppione arrivato da un altro dispositivo: togliendo il link spariscono entrambi.
+        let duplicate = EdgeRecord(sourceID: a.id, targetID: b.id, kind: .link, createdAt: Date())
+        store.saveEdge(duplicate)
+        repository.syncLinkEdges(from: a.id, to: [b.id, c.id])
+        #expect(links().filter { $0 == b.id }.count == 1, "un solo arco attivo per destinazione")
+        repository.syncLinkEdges(from: a.id, to: [c.id])
+        #expect(links() == [c.id])
     }
 }

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Griglia uniforme sulle posizioni dei nodi: trova il nodo toccato e i nodi visibili
 /// senza scorrere tutto il grafo a ogni fotogramma.
@@ -15,23 +18,31 @@ public struct SpatialIndex: Sendable {
     public init(positions: [CGPoint], cellSize: Double = 64) {
         self.cellSize = cellSize
         self.positions = positions
-        for (i, p) in positions.enumerated() {
+        // Una posizione non valida non entra nell'indice: meglio un nodo non toccabile che un crash.
+        for (i, p) in positions.enumerated() where p.x.isFinite && p.y.isFinite {
             cells[cell(p), default: []].append(i)
         }
     }
 
+    /// Coordinate di cella limitate: niente trap su valori enormi o non finiti.
+    private static let cellLimit = 1_000_000.0
+
     private func cell(_ p: CGPoint) -> Cell {
-        Cell(x: Int((Double(p.x) / cellSize).rounded(.down)), y: Int((Double(p.y) / cellSize).rounded(.down)))
+        func coordinate(_ v: Double) -> Int {
+            guard v.isFinite else { return v < 0 ? -Int(Self.cellLimit) : Int(Self.cellLimit) }
+            return Int(min(max((v / cellSize).rounded(.down), -Self.cellLimit), Self.cellLimit))
+        }
+        return Cell(x: coordinate(Double(p.x)), y: coordinate(Double(p.y)))
     }
 
     /// Indici dei nodi dentro il rettangolo (coordinate della scena).
     public func nodes(in rect: CGRect) -> [Int] {
-        guard !rect.isNull, rect.width.isFinite, rect.height.isFinite else { return [] }
+        guard !rect.isNull, rect.minX.isFinite, rect.minY.isFinite, rect.width.isFinite, rect.height.isFinite else { return [] }
         let low = cell(CGPoint(x: rect.minX, y: rect.minY))
         let high = cell(CGPoint(x: rect.maxX, y: rect.maxY))
         // Rettangolo enorme (zoom molto basso): più veloce controllare tutti i nodi.
-        let cellCount = (high.x - low.x + 1) * (high.y - low.y + 1)
-        if cellCount > cells.count {
+        let (cellCount, overflow) = (high.x - low.x + 1).multipliedReportingOverflow(by: high.y - low.y + 1)
+        if overflow || cellCount > cells.count {
             return positions.indices.filter { rect.contains(positions[$0]) }
         }
         var result: [Int] = []

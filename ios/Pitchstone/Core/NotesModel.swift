@@ -15,6 +15,8 @@ final class NotesModel {
     private(set) var edges: [EdgeRecord] = []
     /// Cresce a ogni ricarica: le viste del disegno lo leggono per aggiornarsi.
     private(set) var inkRevision = 0
+    /// Cresce a ogni ricarica dell'archivio: chi ricava dati dai nodi (il grafo) lo osserva.
+    var revision: Int { inkRevision }
     private(set) var syncStatus: SyncStatus = .notConfigured
     /// Ultimo errore da mostrare all'utente.
     var errorMessage: String?
@@ -135,6 +137,8 @@ final class NotesModel {
     @discardableResult
     func createNode(type: NodeType = .concept, title: String = "", area: Area = .studio, body: String = "") -> NodeRecord {
         let node = repository.createNode(type: type, title: title, body: body, area: area)
+        // I [[link]] già scritti verso questo titolo diventano archi.
+        if !title.isEmpty { resyncLinks(mentioning: [title]) }
         changed()
         return node
     }
@@ -145,7 +149,11 @@ final class NotesModel {
     func openOrCreate(titled title: String, area: Area, from source: UUID? = nil) -> UUID {
         if let existing = node(titled: title) { return existing.id }
         let created = createNode(title: title.trimmingCharacters(in: .whitespacesAndNewlines), area: area)
-        if let source { syncLinks(of: source) }
+        if let source {
+            syncLinks(of: source)
+            // L'arco nuovo deve comparire subito nel grafo.
+            changed()
+        }
         return created.id
     }
 
@@ -160,18 +168,42 @@ final class NotesModel {
     }
 
     /// Archi di tipo `link` allineati ai `[[...]]` del corpo. I titoli senza nodo non creano archi.
-    private func syncLinks(of id: UUID) {
+    /// I titoli si risolvono sull'archivio, non sulla lista in memoria che può essere indietro.
+    private func syncLinks(of id: UUID, titles: [String: UUID]? = nil) {
         guard let node = store.node(id) else { return }
-        let targets = MarkdownLinks.wikiTargets(in: node.bodyMD).compactMap { self.node(titled: $0)?.id }
+        let index = titles ?? titleIndex()
+        let targets = MarkdownLinks.wikiTargets(in: node.bodyMD).compactMap { index[Self.titleKey($0)] }
         repository.syncLinkEdges(from: id, to: Set(targets))
+    }
+
+    private func titleIndex() -> [String: UUID] {
+        var index: [String: UUID] = [:]
+        for node in store.allNodes() where node.deletedAt == nil && !node.title.isEmpty {
+            index[Self.titleKey(node.title)] = index[Self.titleKey(node.title)] ?? node.id
+        }
+        return index
+    }
+
+    /// Dopo una rinomina o un nodo nuovo: i nodi che citano quei titoli riallineano i loro archi.
+    private func resyncLinks(mentioning titles: [String]) {
+        let keys = Set(titles.map(Self.titleKey).filter { !$0.isEmpty })
+        guard !keys.isEmpty else { return }
+        let index = titleIndex()
+        for node in store.allNodes() where node.deletedAt == nil && node.bodyMD.contains("[[") {
+            // Filtro veloce prima di analizzare il Markdown.
+            guard titles.contains(where: { !$0.isEmpty && node.bodyMD.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }) else { continue }
+            let mentioned = MarkdownLinks.wikiTargets(in: node.bodyMD).map(Self.titleKey)
+            if mentioned.contains(where: keys.contains) { syncLinks(of: node.id, titles: index) }
+        }
     }
 
     @discardableResult
     func update(_ id: UUID, _ change: (inout NodeRecord) -> Void) -> Bool {
         do {
-            let oldBody = store.node(id)?.bodyMD
+            let old = store.node(id)
             let updated = try repository.updateNode(id, change)
-            if updated.bodyMD != oldBody { syncLinks(of: id) }
+            if updated.bodyMD != old?.bodyMD { syncLinks(of: id) }
+            if updated.title != old?.title { resyncLinks(mentioning: [old?.title ?? "", updated.title]) }
             changed()
             return true
         } catch RepositoryError.syncedNodeCannotBecomeSensitive {

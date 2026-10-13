@@ -35,6 +35,18 @@ struct AppGraphTests {
         #expect(model.edges.contains { $0.sourceID == a.id && $0.targetID == created && $0.deletedAt == nil })
     }
 
+    @Test("rinomina e nodo nuovo riallineano i link scritti prima")
+    func renameAndCreateResyncLinks() {
+        let a = model.createNode(title: "Appunti")
+        model.update(a.id) { $0.bodyMD = "Vedi [[Limite]]" }
+        let links = { model.edges.filter { $0.sourceID == a.id && $0.kind == .link && $0.deletedAt == nil }.map(\.targetID) }
+        #expect(links().isEmpty, "Limite non esiste ancora")
+        let limite = model.createNode(title: "Limite")
+        #expect(links() == [limite.id], "creare il nodo crea l'arco")
+        model.update(limite.id) { $0.title = "Limite notevole" }
+        #expect(links().isEmpty, "il link [[Limite]] non punta più a nulla")
+    }
+
     @Test("collegamento con la Pencil: niente doppioni, niente archi verso sé stesso")
     func connect() {
         let a = model.createNode(title: "A")

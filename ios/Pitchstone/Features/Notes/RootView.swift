@@ -8,6 +8,7 @@ struct RootView: View {
     @State private var showingTrash = false
     @State private var showingSettings = false
     @State private var showingGraph = false
+    @State private var graphState = GraphState()
     /// Nodo aperto dal grafo, in un foglio sopra il grafo.
     @State private var graphOpen: GraphOpen?
 
@@ -54,7 +55,7 @@ struct RootView: View {
                 }
         } detail: {
             if showingGraph {
-                GraphScreen { id, editing in
+                GraphScreen(state: graphState) { id, editing in
                     graphOpen = GraphOpen(id: id, editing: editing)
                 }
             } else if let selection, let node = notes.node(selection), node.deletedAt == nil {

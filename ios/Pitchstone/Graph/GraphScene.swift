@@ -9,7 +9,7 @@ import UIKit
 /// Prestazioni: i nodi sono sprite con la stessa texture (un solo draw call), tutti
 /// gli archi sono un unico percorso, le etichette sono un insieme fisso riciclato
 /// e compaiono solo per i nodi visibili a zoom alto.
-final class GraphScene: SKScene {
+final class GraphScene: SKScene, UIGestureRecognizerDelegate {
     /// Tap: apre il nodo (false); doppio tap: lo apre in modifica (true).
     var onOpen: ((UUID, Bool) -> Void)?
     /// Pencil da un nodo a un altro: collega i due nodi.
@@ -30,7 +30,12 @@ final class GraphScene: SKScene {
     private let labelsLayer = SKNode()
     private let linkLine = SKShapeNode()
     private var sprites: [SKSpriteNode] = []
-    private var labelPool: [SKLabelNode] = []
+    /// Etichette assegnate ai nodi visibili e quelle libere da riusare: un nodo che resta
+    /// visibile tiene la sua etichetta, senza ridisegnare il testo a ogni fotogramma.
+    private var labelsByNode: [Int: SKLabelNode] = [:]
+    private var freeLabels: [SKLabelNode] = []
+    private var recognizers: [UIGestureRecognizer] = []
+    private weak var pencilRecognizer: UIGestureRecognizer?
     private var clusterLabels: [SKLabelNode] = []
     private var linkStart: Int?
 
@@ -95,12 +100,14 @@ final class GraphScene: SKScene {
         if graph.structureKey == self.graph.structureKey, positions == self.positions, !sprites.isEmpty {
             self.graph = graph
             for (i, node) in graph.nodes.enumerated() { sprites[i].color = node.graphColor }
+            for (i, label) in labelsByNode { label.text = Self.title(graph.nodes[i]) }
             updateLabels()
             return
         }
         self.graph = graph
         self.positions = positions
         index = SpatialIndex(positions: positions)
+        releaseAllLabels()
 
         nodesLayer.removeAllChildren()
         sprites = graph.nodes.enumerated().map { i, node in
@@ -154,6 +161,7 @@ final class GraphScene: SKScene {
 
             let label = SKLabelNode(text: "\(area.graphName) · \(members.count)")
             label.fontName = "HelveticaNeue-Bold"
+            label.fontSize = 20
             label.fontColor = area.graphColor
             label.verticalAlignmentMode = .center
             label.position = CGPoint(x: cx, y: cy)
@@ -208,24 +216,29 @@ final class GraphScene: SKScene {
         applyCamera()
     }
 
-    private func applyCamera() {
+    /// `finished`: fine del gesto. Lo spessore degli archi cambia solo allora, perché
+    /// ridisegnare un percorso con migliaia di segmenti a ogni fotogramma costa.
+    private func applyCamera(finished: Bool = true) {
         cameraNode.position = graphCamera.center
         cameraNode.setScale(1 / graphCamera.zoom)
-        // Archi sempre sottili sullo schermo.
-        edgesNode.lineWidth = max(0.5, 1 / graphCamera.zoom)
+        if finished {
+            // Archi sempre sottili sullo schermo (circa 1 punto).
+            edgesNode.lineWidth = 1 / graphCamera.zoom
+        }
         linkLine.lineWidth = 3 / graphCamera.zoom
 
         let detail = graphCamera.detail
         clustersLayer.alpha = detail == .clusters ? 1 : (detail == .nodes ? 0.35 : 0)
         for label in clusterLabels {
-            label.fontSize = 20 / graphCamera.zoom
+            label.setScale(1 / graphCamera.zoom)
             label.isHidden = detail == .labels
         }
         nodesLayer.alpha = detail == .clusters ? 0.5 : 1
         updateLabels()
     }
 
-    /// Titoli solo da vicino e solo per i nodi visibili (al massimo `maxLabels`).
+    /// Titoli solo da vicino e solo per i nodi visibili (al massimo `maxLabels`), con
+    /// precedenza ai risultati della ricerca e poi ai nodi più collegati.
     private func updateLabels() {
         guard graphCamera.detail == .labels else {
             labelsLayer.isHidden = true
@@ -233,33 +246,58 @@ final class GraphScene: SKScene {
         }
         labelsLayer.isHidden = false
         var visible = index.nodes(in: graphCamera.visibleRect())
-        if filterActive { visible.sort { highlighted.contains($0) && !highlighted.contains($1) } }
         if visible.count > Self.maxLabels {
-            // Precedenza ai nodi più collegati.
-            visible = Array(visible.sorted { graph.nodes[$0].degree > graph.nodes[$1].degree }.prefix(Self.maxLabels))
-        }
-        while labelPool.count < visible.count {
-            let label = SKLabelNode()
-            label.fontName = "HelveticaNeue"
-            label.fontColor = .label
-            label.verticalAlignmentMode = .top
-            labelsLayer.addChild(label)
-            labelPool.append(label)
-        }
-        let fontSize = 12 / graphCamera.zoom
-        for (slot, label) in labelPool.enumerated() {
-            guard slot < visible.count else {
-                label.isHidden = true
-                continue
+            visible.sort { a, b in
+                let ha = filterActive && highlighted.contains(a), hb = filterActive && highlighted.contains(b)
+                if ha != hb { return ha }
+                return graph.nodes[a].degree > graph.nodes[b].degree
             }
-            let i = visible[slot]
-            let node = graph.nodes[i]
-            label.isHidden = false
-            label.text = node.title.isEmpty ? String(localized: "Senza titolo") : node.title
-            label.fontSize = fontSize
-            label.position = CGPoint(x: positions[i].x, y: positions[i].y - (sprites[i].size.height / 2 + 4 / graphCamera.zoom))
+            visible = Array(visible.prefix(Self.maxLabels))
+        }
+        let wanted = Set(visible)
+        for (i, label) in labelsByNode where !wanted.contains(i) {
+            label.isHidden = true
+            labelsByNode[i] = nil
+            freeLabels.append(label)
+        }
+        // Testo a dimensione fissa, scalato con lo zoom: niente nuova rasterizzazione.
+        let scale = 1 / graphCamera.zoom
+        for i in visible {
+            let label: SKLabelNode
+            if let existing = labelsByNode[i] {
+                label = existing
+            } else {
+                label = freeLabels.popLast() ?? makeLabel()
+                label.text = Self.title(graph.nodes[i])
+                label.isHidden = false
+                labelsByNode[i] = label
+            }
+            label.setScale(scale)
+            label.position = CGPoint(x: positions[i].x, y: positions[i].y - (sprites[i].size.height / 2 + 4 * scale))
             label.alpha = (!filterActive || highlighted.contains(i)) ? 1 : 0.25
         }
+    }
+
+    private func makeLabel() -> SKLabelNode {
+        let label = SKLabelNode()
+        label.fontName = "HelveticaNeue"
+        label.fontSize = 12
+        label.fontColor = .label
+        label.verticalAlignmentMode = .top
+        labelsLayer.addChild(label)
+        return label
+    }
+
+    private func releaseAllLabels() {
+        for label in labelsByNode.values {
+            label.isHidden = true
+            freeLabels.append(label)
+        }
+        labelsByNode = [:]
+    }
+
+    private static func title(_ node: GraphData.Node) -> String {
+        node.title.isEmpty ? String(localized: "Senza titolo") : node.title
     }
 
     // MARK: Gesti
@@ -267,13 +305,16 @@ final class GraphScene: SKScene {
     override func didMove(to view: SKView) {
         super.didMove(to: view)
         view.isMultipleTouchEnabled = true
+        removeRecognizers()
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch))
+        pinch.delegate = self
         view.addGestureRecognizer(pinch)
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pan.maximumNumberOfTouches = 2
+        pan.delegate = self
         view.addGestureRecognizer(pan)
 
         let pencil = UIPanGestureRecognizer(target: self, action: #selector(handlePencil))
@@ -287,13 +328,35 @@ final class GraphScene: SKScene {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         tap.require(toFail: doubleTap)
         view.addGestureRecognizer(tap)
+        recognizers = [pinch, pan, pencil, doubleTap, tap]
+        pencilRecognizer = pencil
+    }
+
+    override func willMove(from view: SKView) {
+        super.willMove(from: view)
+        removeRecognizers()
+    }
+
+    private func removeRecognizers() {
+        for recognizer in recognizers { recognizer.view?.removeGestureRecognizer(recognizer) }
+        recognizers = []
+    }
+
+    /// Pinch e pan insieme: con due dita si zooma e si sposta nello stesso gesto.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        let pencil = pencilRecognizer
+        let fingers: (UIGestureRecognizer) -> Bool = {
+            ($0 is UIPinchGestureRecognizer || $0 is UIPanGestureRecognizer) && $0 !== pencil
+        }
+        return fingers(gestureRecognizer) && fingers(other)
     }
 
     @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
         guard let view = recognizer.view, recognizer.state == .changed || recognizer.state == .ended else { return }
         graphCamera.pinch(by: Double(recognizer.scale), around: recognizer.location(in: view))
         recognizer.scale = 1
-        applyCamera()
+        applyCamera(finished: recognizer.state == .ended)
     }
 
     @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
@@ -301,7 +364,7 @@ final class GraphScene: SKScene {
         let delta = recognizer.translation(in: view)
         graphCamera.pan(by: CGSize(width: delta.x, height: delta.y))
         recognizer.setTranslation(.zero, in: view)
-        applyCamera()
+        applyCamera(finished: recognizer.state == .ended)
     }
 
     @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
@@ -319,7 +382,10 @@ final class GraphScene: SKScene {
         let point = recognizer.location(in: view)
         switch recognizer.state {
         case .began:
-            linkStart = graphCamera.node(at: point, in: index)
+            // Il pan parte dopo un piccolo spostamento: il nodo di partenza è dove la Pencil ha toccato.
+            let translation = recognizer.translation(in: view)
+            let touchDown = CGPoint(x: point.x - translation.x, y: point.y - translation.y)
+            linkStart = graphCamera.node(at: touchDown, in: index)
             linkLine.isHidden = linkStart == nil
         case .changed:
             guard let start = linkStart else { return }
@@ -370,3 +436,4 @@ extension Area {
         }
     }
 }
+
