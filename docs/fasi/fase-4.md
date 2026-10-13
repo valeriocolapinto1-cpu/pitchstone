@@ -11,6 +11,7 @@ Import di vault Obsidian, PDF con annotazioni collegate al grafo, foto di appunt
 - [ ] Un vault di esempio viene importato con i link.
 - [ ] Un PDF di 100 MB viene diviso in parti sotto 50 MB e ricomposto alla lettura.
 - [ ] L'OCR dà testo ricercabile.
+- [ ] Bucket `attachments` privato, senza URL pubblici, accesso con URL firmati a breve durata.
 
 ## Test
 

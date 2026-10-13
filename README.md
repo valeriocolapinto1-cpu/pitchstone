@@ -19,7 +19,7 @@ npm run dev                      # Worker su http://localhost:8787/health
 npm run lint && npm test
 ```
 
-Test del keep-alive: `node --test "tools/keepalive/*.test.mjs"`.
+Keep-alive: `cd tools/keepalive && npm ci && npm run lint && npm test`.
 
 ## Segreti richiesti
 

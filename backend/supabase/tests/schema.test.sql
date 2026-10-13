@@ -18,15 +18,17 @@ select is(
     where schemaname = 'public' and roles && array['anon', 'public']::name[]),
   0, 'nessuna policy per anon');
 
+-- has_table_privilege considera anche i grant a public.
 select is(
-  (select count(*)::int from information_schema.role_table_grants
-    where grantee = 'anon' and table_schema = 'public' and table_name <> 'keepalive'),
+  (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'v', 'm', 'p') and c.relname <> 'keepalive'
+      and has_table_privilege('anon', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')),
   0, 'anon senza privilegi sulle tabelle utente');
 
-select is(
-  (select array_agg(privilege_type::text) from information_schema.role_table_grants
-    where grantee = 'anon' and table_schema = 'public' and table_name = 'keepalive'),
-  array['SELECT'], 'anon ha solo SELECT su keepalive');
+select ok(
+  has_table_privilege('anon', 'public.keepalive', 'SELECT')
+    and not has_table_privilege('anon', 'public.keepalive', 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'),
+  'anon ha solo SELECT su keepalive');
 
 select is((select count(*)::int from keepalive), 1, 'keepalive ha una sola riga');
 
