@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: main
-Commit: ce718fbc6a11334d4ffd97d5c4b8a3c09e4b256e
+Branch: fase-4-allegati
+Commit: b2fab3bbfdfcc76e8b3ae1d3358a539a5ac5d6d9
