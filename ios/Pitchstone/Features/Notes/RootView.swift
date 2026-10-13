@@ -7,10 +7,32 @@ struct RootView: View {
     @State private var selection: UUID?
     @State private var showingTrash = false
     @State private var showingSettings = false
+    @State private var showingGraph = false
+    /// Nodo aperto dal grafo, in un foglio sopra il grafo.
+    @State private var graphOpen: GraphOpen?
+
+    struct GraphOpen: Identifiable {
+        var id: UUID
+        var editing: Bool
+    }
 
     var body: some View {
         NavigationSplitView {
-            NodeListView(selection: $selection)
+            NodeListView(selection: Binding(get: { selection }, set: { value in
+                selection = value
+                // Scegliere un nodo dall'elenco riporta alla nota.
+                if value != nil { showingGraph = false }
+            }))
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Picker("Vista", selection: $showingGraph) {
+                            Label("Elenco", systemImage: "doc.text").tag(false)
+                            Label("Grafo", systemImage: "circle.hexagongrid").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelStyle(.iconOnly)
+                    }
+                }
                 // Barra in fondo all'elenco: la bottomBar della sidebar non è supportata da UIKit.
                 .safeAreaInset(edge: .bottom) {
                     HStack {
@@ -31,9 +53,13 @@ struct RootView: View {
                     .background(.bar)
                 }
         } detail: {
-            if let selection, let node = notes.node(selection), node.deletedAt == nil {
+            if showingGraph {
+                GraphScreen { id, editing in
+                    graphOpen = GraphOpen(id: id, editing: editing)
+                }
+            } else if let selection, let node = notes.node(selection), node.deletedAt == nil {
                 NodeDetailView(nodeID: selection) { title, area in
-                    self.selection = notes.openOrCreate(titled: title, area: area)
+                    self.selection = notes.openOrCreate(titled: title, area: area, from: selection)
                 }
                 .id(selection)
             } else {
@@ -43,6 +69,25 @@ struct RootView: View {
                     Text("Scegli un nodo dall'elenco o creane uno nuovo con ⌘N.")
                 }
             }
+        }
+        .sheet(item: $graphOpen) { open in
+            NavigationStack {
+                NodeDetailView(nodeID: open.id, initialMode: open.editing ? .write : .preview) { title, area in
+                    graphOpen = GraphOpen(id: notes.openOrCreate(titled: title, area: area, from: open.id), editing: false)
+                }
+                .id(open.id)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Fine") { graphOpen = nil }
+                    }
+                }
+            }
+        }
+        .background {
+            // ⌘G passa dall'elenco al grafo e viceversa.
+            Button("Grafo") { showingGraph.toggle() }
+                .keyboardShortcut("g", modifiers: .command)
+                .hidden()
         }
         .sheet(isPresented: $showingTrash) {
             TrashView()
