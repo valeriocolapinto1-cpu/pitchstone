@@ -8,6 +8,7 @@ public struct OutgoingChange: Encodable, Sendable {
         case node(NodeRecord)
         case edge(EdgeRecord)
         case inkPage(InkPageRecord)
+        case attachment(AttachmentRecord)
     }
 
     public var baseVersion: Int?
@@ -23,6 +24,7 @@ public struct OutgoingChange: Encodable, Sendable {
         case .node: .node
         case .edge: .edge
         case .inkPage: .inkPage
+        case .attachment: .attachment
         }
     }
 
@@ -31,6 +33,7 @@ public struct OutgoingChange: Encodable, Sendable {
         case .node(let n): n.id
         case .edge(let e): e.id
         case .inkPage(let p): p.id
+        case .attachment(let a): a.id
         }
     }
 
@@ -40,6 +43,7 @@ public struct OutgoingChange: Encodable, Sendable {
         case .node(let n): 600 + n.bodyMD.utf8.count + n.title.utf8.count
         case .edge(let e): 400 + (e.label?.utf8.count ?? 0)
         case .inkPage(let p): 600 + (p.inkData.count + 2) / 3 * 4
+        case .attachment(let a): 700 + a.fileName.utf8.count
         }
     }
 
@@ -56,6 +60,7 @@ public struct OutgoingChange: Encodable, Sendable {
         case .node(let n): try c.encode(n, forKey: .data)
         case .edge(let e): try c.encode(e, forKey: .data)
         case .inkPage(let p): try c.encode(p, forKey: .data)
+        case .attachment(let a): try c.encode(a, forKey: .data)
         }
     }
 }
@@ -81,17 +86,19 @@ public struct PushResult: Decodable, Sendable {
     public var node: NodeRecord?
     public var edge: EdgeRecord?
     public var inkPage: InkPageRecord?
+    public var attachment: AttachmentRecord?
     public var error: String?
     public var message: String?
 
     public init(entity: Entity?, id: UUID?, status: Status, node: NodeRecord? = nil, edge: EdgeRecord? = nil,
-                inkPage: InkPageRecord? = nil, error: String? = nil, message: String? = nil) {
+                inkPage: InkPageRecord? = nil, attachment: AttachmentRecord? = nil, error: String? = nil, message: String? = nil) {
         self.entity = entity
         self.id = id
         self.status = status
         self.node = node
         self.edge = edge
         self.inkPage = inkPage
+        self.attachment = attachment
         self.error = error
         self.message = message
     }
@@ -112,6 +119,7 @@ public struct PushResult: Decodable, Sendable {
             case .node: node = try c.decode(NodeRecord.self, forKey: .record)
             case .edge: edge = try c.decode(EdgeRecord.self, forKey: .record)
             case .inkPage: inkPage = try c.decode(InkPageRecord.self, forKey: .record)
+            case .attachment: attachment = try c.decode(AttachmentRecord.self, forKey: .record)
             case nil: break
             }
         }
@@ -136,6 +144,7 @@ public enum IncomingChange: Decodable, Sendable {
     case edge(EdgeRecord)
     case nodeVersion(NodeVersionRecord)
     case inkPage(InkPageRecord)
+    case attachment(AttachmentRecord)
     case purged(Entity, UUID)
     /// Entità introdotte da fasi successive: ignorate dai client più vecchi.
     case unknown
@@ -157,6 +166,7 @@ public enum IncomingChange: Decodable, Sendable {
         case "edge": self = .edge(try c.decode(EdgeRecord.self, forKey: .data))
         case "node_version": self = .nodeVersion(try c.decode(NodeVersionRecord.self, forKey: .data))
         case "ink_page": self = .inkPage(try c.decode(InkPageRecord.self, forKey: .data))
+        case "attachment": self = .attachment(try c.decode(AttachmentRecord.self, forKey: .data))
         case "purged":
             let p = try c.decode(Purged.self, forKey: .data)
             self = Entity(rawValue: p.entity).map { .purged($0, p.id) } ?? .unknown
