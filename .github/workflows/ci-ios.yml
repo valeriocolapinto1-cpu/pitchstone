@@ -1,0 +1,44 @@
+name: ci-ios
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      has-project: ${{ steps.check.outputs.has-project }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ ! -d ios ]; then
+            echo "::error::Cartella ios/ assente"
+            exit 1
+          fi
+          if [ -d ios/Pitchstone.xcodeproj ]; then
+            echo "has-project=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-project=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Nessun progetto Xcode: build saltata"
+          fi
+
+  # Gira su macOS (costo 10x) solo quando il progetto esiste.
+  build:
+    needs: detect
+    if: needs.detect.outputs.has-project == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: >
+          xcodebuild build
+          -project ios/Pitchstone.xcodeproj
+          -scheme Pitchstone
+          -destination 'generic/platform=iOS Simulator'
