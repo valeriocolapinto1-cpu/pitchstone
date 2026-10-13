@@ -11,6 +11,8 @@ import SwiftData
 @Observable
 final class NotesModel {
     private(set) var nodes: [NodeRecord] = []
+    /// Cresce a ogni ricarica: le viste del disegno lo leggono per aggiornarsi.
+    private(set) var inkRevision = 0
     private(set) var syncStatus: SyncStatus = .notConfigured
     /// Ultimo errore da mostrare all'utente.
     var errorMessage: String?
@@ -43,6 +45,7 @@ final class NotesModel {
 
     func reload() {
         nodes = store.allNodes()
+        inkRevision += 1
     }
 
     var activeNodes: [NodeRecord] { nodes.filter { $0.deletedAt == nil } }
@@ -62,6 +65,60 @@ final class NotesModel {
     }
 
     func history(of id: UUID) -> [NodeVersionRecord] { repository.history(of: id) }
+
+    // MARK: Disegno
+
+    func inkPages(of nodeID: UUID) -> [InkPageRecord] {
+        _ = inkRevision
+        return repository.inkPages(of: nodeID)
+    }
+
+    func inkPage(_ id: UUID) -> InkPageRecord? {
+        _ = inkRevision
+        return store.inkPage(id)
+    }
+
+    @discardableResult
+    func createInkPage(in nodeID: UUID, background: InkBackground) -> InkPageRecord? {
+        do {
+            let page = try repository.createInkPage(in: nodeID, background: background)
+            changed()
+            return page
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func updateInkPage(_ id: UUID, _ change: (inout InkPageRecord) -> Void) {
+        perform { try repository.updateInkPage(id, change) }
+    }
+
+    func trashInkPage(_ id: UUID) {
+        perform { try repository.trashInkPage(id) }
+    }
+
+    func restoreInkPage(_ id: UUID) {
+        perform { try repository.restoreInkPage(id) }
+    }
+
+    func trashedInkPages(of nodeID: UUID) -> [InkPageRecord] {
+        _ = inkRevision
+        return repository.trashedInkPages(of: nodeID)
+    }
+
+    /// Salva i tratti di una tela partita da `loadedFrom`; ritorna la pagina usata
+    /// (una nuova, se nel frattempo la pagina è cambiata per una sync).
+    func saveDrawing(_ data: Data, to id: UUID, loadedFrom: Data) -> InkPageRecord? {
+        do {
+            let page = try repository.saveDrawing(data, to: id, loadedFrom: loadedFrom)
+            changed()
+            return page
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
 
     /// Giorni rimasti prima dell'eliminazione definitiva dal cestino.
     func daysLeftInTrash(_ node: NodeRecord, now: Date = Date()) -> Int {

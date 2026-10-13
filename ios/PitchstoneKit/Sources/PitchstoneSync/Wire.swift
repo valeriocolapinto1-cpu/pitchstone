@@ -7,6 +7,7 @@ public struct OutgoingChange: Encodable, Sendable {
     public enum Payload: Sendable {
         case node(NodeRecord)
         case edge(EdgeRecord)
+        case inkPage(InkPageRecord)
     }
 
     public var baseVersion: Int?
@@ -21,6 +22,7 @@ public struct OutgoingChange: Encodable, Sendable {
         switch payload {
         case .node: .node
         case .edge: .edge
+        case .inkPage: .inkPage
         }
     }
 
@@ -28,6 +30,16 @@ public struct OutgoingChange: Encodable, Sendable {
         switch payload {
         case .node(let n): n.id
         case .edge(let e): e.id
+        case .inkPage(let p): p.id
+        }
+    }
+
+    /// Dimensione stimata in JSON: i disegni pesano molto più del testo.
+    public var estimatedBytes: Int {
+        switch payload {
+        case .node(let n): 600 + n.bodyMD.utf8.count + n.title.utf8.count
+        case .edge(let e): 400 + (e.label?.utf8.count ?? 0)
+        case .inkPage(let p): 600 + (p.inkData.count + 2) / 3 * 4
         }
     }
 
@@ -43,6 +55,7 @@ public struct OutgoingChange: Encodable, Sendable {
         switch payload {
         case .node(let n): try c.encode(n, forKey: .data)
         case .edge(let e): try c.encode(e, forKey: .data)
+        case .inkPage(let p): try c.encode(p, forKey: .data)
         }
     }
 }
@@ -67,16 +80,18 @@ public struct PushResult: Decodable, Sendable {
     public var status: Status
     public var node: NodeRecord?
     public var edge: EdgeRecord?
+    public var inkPage: InkPageRecord?
     public var error: String?
     public var message: String?
 
     public init(entity: Entity?, id: UUID?, status: Status, node: NodeRecord? = nil, edge: EdgeRecord? = nil,
-                error: String? = nil, message: String? = nil) {
+                inkPage: InkPageRecord? = nil, error: String? = nil, message: String? = nil) {
         self.entity = entity
         self.id = id
         self.status = status
         self.node = node
         self.edge = edge
+        self.inkPage = inkPage
         self.error = error
         self.message = message
     }
@@ -96,6 +111,7 @@ public struct PushResult: Decodable, Sendable {
             switch entity {
             case .node: node = try c.decode(NodeRecord.self, forKey: .record)
             case .edge: edge = try c.decode(EdgeRecord.self, forKey: .record)
+            case .inkPage: inkPage = try c.decode(InkPageRecord.self, forKey: .record)
             case nil: break
             }
         }
@@ -119,6 +135,7 @@ public enum IncomingChange: Decodable, Sendable {
     case node(NodeRecord)
     case edge(EdgeRecord)
     case nodeVersion(NodeVersionRecord)
+    case inkPage(InkPageRecord)
     case purged(Entity, UUID)
     /// Entità introdotte da fasi successive: ignorate dai client più vecchi.
     case unknown
@@ -128,7 +145,8 @@ public enum IncomingChange: Decodable, Sendable {
     }
 
     struct Purged: Decodable {
-        var entity: Entity
+        /// Stringa, non `Entity`: un tipo introdotto da una versione successiva non deve rompere il pull.
+        var entity: String
         var id: UUID
     }
 
@@ -138,9 +156,10 @@ public enum IncomingChange: Decodable, Sendable {
         case "node": self = .node(try c.decode(NodeRecord.self, forKey: .data))
         case "edge": self = .edge(try c.decode(EdgeRecord.self, forKey: .data))
         case "node_version": self = .nodeVersion(try c.decode(NodeVersionRecord.self, forKey: .data))
+        case "ink_page": self = .inkPage(try c.decode(InkPageRecord.self, forKey: .data))
         case "purged":
             let p = try c.decode(Purged.self, forKey: .data)
-            self = .purged(p.entity, p.id)
+            self = Entity(rawValue: p.entity).map { .purged($0, p.id) } ?? .unknown
         default: self = .unknown
         }
     }
