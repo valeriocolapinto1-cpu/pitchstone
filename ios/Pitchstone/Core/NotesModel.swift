@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import PitchstoneNotes
 import PitchstoneStore
 import PitchstoneSync
 import SwiftData
@@ -11,6 +12,7 @@ import SwiftData
 @Observable
 final class NotesModel {
     private(set) var nodes: [NodeRecord] = []
+    private(set) var edges: [EdgeRecord] = []
     /// Cresce a ogni ricarica: le viste del disegno lo leggono per aggiornarsi.
     private(set) var inkRevision = 0
     private(set) var syncStatus: SyncStatus = .notConfigured
@@ -45,6 +47,7 @@ final class NotesModel {
 
     func reload() {
         nodes = store.allNodes()
+        edges = store.allEdges()
         inkRevision += 1
     }
 
@@ -137,15 +140,38 @@ final class NotesModel {
     }
 
     /// Apre il nodo collegato da `[[titolo]]`, creandolo se non esiste.
-    func openOrCreate(titled title: String, area: Area) -> UUID {
+    /// `source` è il nodo da cui parte il link: se il nodo collegato viene creato ora,
+    /// l'arco compare subito nel grafo.
+    func openOrCreate(titled title: String, area: Area, from source: UUID? = nil) -> UUID {
         if let existing = node(titled: title) { return existing.id }
-        return createNode(title: title.trimmingCharacters(in: .whitespacesAndNewlines), area: area).id
+        let created = createNode(title: title.trimmingCharacters(in: .whitespacesAndNewlines), area: area)
+        if let source { syncLinks(of: source) }
+        return created.id
+    }
+
+    /// Collega due nodi a mano (Pencil sul grafo). Non duplica un arco già presente.
+    func connect(_ a: UUID, _ b: UUID) {
+        guard a != b else { return }
+        let exists = edges.contains {
+            $0.deletedAt == nil && (($0.sourceID == a && $0.targetID == b) || ($0.sourceID == b && $0.targetID == a))
+        }
+        guard !exists else { return }
+        perform { try repository.createEdge(from: a, to: b, kind: .manual) }
+    }
+
+    /// Archi di tipo `link` allineati ai `[[...]]` del corpo. I titoli senza nodo non creano archi.
+    private func syncLinks(of id: UUID) {
+        guard let node = store.node(id) else { return }
+        let targets = MarkdownLinks.wikiTargets(in: node.bodyMD).compactMap { self.node(titled: $0)?.id }
+        repository.syncLinkEdges(from: id, to: Set(targets))
     }
 
     @discardableResult
     func update(_ id: UUID, _ change: (inout NodeRecord) -> Void) -> Bool {
         do {
-            try repository.updateNode(id, change)
+            let oldBody = store.node(id)?.bodyMD
+            let updated = try repository.updateNode(id, change)
+            if updated.bodyMD != oldBody { syncLinks(of: id) }
             changed()
             return true
         } catch RepositoryError.syncedNodeCannotBecomeSensitive {

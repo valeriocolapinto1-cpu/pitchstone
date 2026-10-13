@@ -101,6 +101,35 @@ public final class Repository {
         return edge
     }
 
+    /// Allinea gli archi di tipo `link` di un nodo ai suoi link `[[...]]`: crea quelli
+    /// nuovi, ripristina quelli tornati, mette nel cestino quelli spariti dal testo.
+    /// Gli archi manuali e quelli dell'AI non vengono toccati.
+    public func syncLinkEdges(from nodeID: UUID, to targets: Set<UUID>) {
+        guard store.node(nodeID) != nil else { return }
+        let wanted = targets.subtracting([nodeID]).filter { store.node($0) != nil }
+        var existing: [UUID: EdgeRecord] = [:]
+        for edge in store.allEdges() where edge.sourceID == nodeID && edge.kind == .link {
+            // Se ci sono doppioni, si tiene quello attivo.
+            if existing[edge.targetID]?.deletedAt == nil, existing[edge.targetID] != nil { continue }
+            existing[edge.targetID] = edge
+        }
+        for target in wanted {
+            if let edge = existing[target] {
+                if edge.deletedAt != nil {
+                    var restored = edge
+                    restored.deletedAt = nil
+                    store.saveEdge(restored)
+                    if Privacy.isSyncable(restored, in: store) { enqueue(.edge, edge.id, version: edge.version) }
+                }
+            } else {
+                _ = try? createEdge(from: nodeID, to: target, kind: .link)
+            }
+        }
+        for (target, edge) in existing where !wanted.contains(target) && edge.deletedAt == nil {
+            try? trashEdge(edge.id)
+        }
+    }
+
     public func trashEdge(_ id: UUID) throws {
         guard var edge = store.edge(id) else { throw RepositoryError.notFound }
         edge.deletedAt = now()

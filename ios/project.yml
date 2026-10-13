@@ -31,6 +31,8 @@ targets:
         product: PitchstoneStore
       - package: PitchstoneKit
         product: PitchstoneNotes
+      - package: PitchstoneKit
+        product: PitchstoneGraph
     info:
       path: Pitchstone/Resources/Info.plist
       properties:
