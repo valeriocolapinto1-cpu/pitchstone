@@ -104,6 +104,14 @@ public final class SyncEngine {
         where pending.rejection == nil && !sent.contains(Key(entity: pending.entity, id: pending.id)) {
             if batch.count == Self.batchSize { break }
             guard let change = outgoing(for: pending) else { continue }
+            // Una voce che da sola supera il limite non passerebbe mai dal Worker:
+            // resta in outbox come rifiutata invece di bloccare tutta la sync.
+            if change.estimatedBytes > Self.maxBatchBytes {
+                var parked = pending
+                parked.rejection = "troppo grande per la sincronizzazione"
+                store.savePending(parked)
+                continue
+            }
             bytes += change.estimatedBytes
             // Troppo grande per questo push: resta per il prossimo, salvo che sia l'unica voce.
             if bytes > Self.maxBatchBytes, !batch.isEmpty { break }

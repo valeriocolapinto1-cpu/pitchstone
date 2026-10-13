@@ -145,7 +145,8 @@ public enum IncomingChange: Decodable, Sendable {
     }
 
     struct Purged: Decodable {
-        var entity: Entity
+        /// Stringa, non `Entity`: un tipo introdotto da una versione successiva non deve rompere il pull.
+        var entity: String
         var id: UUID
     }
 
@@ -158,7 +159,7 @@ public enum IncomingChange: Decodable, Sendable {
         case "ink_page": self = .inkPage(try c.decode(InkPageRecord.self, forKey: .data))
         case "purged":
             let p = try c.decode(Purged.self, forKey: .data)
-            self = .purged(p.entity, p.id)
+            self = Entity(rawValue: p.entity).map { .purged($0, p.id) } ?? .unknown
         default: self = .unknown
         }
     }

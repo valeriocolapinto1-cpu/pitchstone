@@ -98,6 +98,28 @@ final class NotesModel {
         perform { try repository.trashInkPage(id) }
     }
 
+    func restoreInkPage(_ id: UUID) {
+        perform { try repository.restoreInkPage(id) }
+    }
+
+    func trashedInkPages(of nodeID: UUID) -> [InkPageRecord] {
+        _ = inkRevision
+        return repository.trashedInkPages(of: nodeID)
+    }
+
+    /// Salva i tratti di una tela partita da `loadedFrom`; ritorna la pagina usata
+    /// (una nuova, se nel frattempo la pagina è cambiata per una sync).
+    func saveDrawing(_ data: Data, to id: UUID, loadedFrom: Data) -> InkPageRecord? {
+        do {
+            let page = try repository.saveDrawing(data, to: id, loadedFrom: loadedFrom)
+            changed()
+            return page
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
     /// Giorni rimasti prima dell'eliminazione definitiva dal cestino.
     func daysLeftInTrash(_ node: NodeRecord, now: Date = Date()) -> Int {
         guard let deleted = node.deletedAt else { return 0 }

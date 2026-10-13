@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(23);
 
 select ok(not has_table_privilege('anon', 'public.ink_pages', 'SELECT'), 'anon non legge ink_pages');
 select ok(not has_function_privilege('authenticated', 'public.sync_apply_ink(text, integer, jsonb)', 'EXECUTE'), 'authenticated non esegue sync_apply_ink');
@@ -48,14 +48,27 @@ select is(
     where id = (select (v #>> '{results,0,copy_id}')::uuid from t where k = 'conflict')),
   array['BBB', '1', 'blank', 'ipad-b'], 'la copia contiene il disegno di B in fondo al nodo');
 
+-- Risposta persa: lo stesso push ripetuto non crea una seconda copia.
+select public.sync_push('ipad-b', $$[
+  {"entity":"ink_page","base_version":2,"data":{"id":"20000000-0000-4000-8000-000000000101","node_id":"20000000-0000-4000-8000-000000000001","page_no":0,"background":"blank","ink_data":"QkJC"}}
+]$$);
+select is((select count(*)::int from public.ink_pages where node_id = '20000000-0000-4000-8000-000000000001' and encode(ink_data, 'escape') = 'BBB'), 1, 'nessuna copia doppia su un nuovo invio');
+
 -- Conflitto apparente: stessi byte, nessuna copia.
 select ok(
   public.sync_push('ipad-b', $$[{"entity":"ink_page","base_version":1,"data":{"id":"20000000-0000-4000-8000-000000000101","node_id":"20000000-0000-4000-8000-000000000001","page_no":0,"background":"lines","ink_data":"QUFB"}}]$$)
     #> '{results,0}' ? 'copy_id' = false,
   'stessi tratti: nessuna copia');
 
+-- Conflitto apparente con eliminazione: l'eliminazione del client vale, lo sfondo resta del server.
+insert into t values ('staleDelete', public.sync_push('ipad-b', $$[
+  {"entity":"ink_page","base_version":1,"data":{"id":"20000000-0000-4000-8000-000000000101","node_id":"20000000-0000-4000-8000-000000000001","page_no":0,"background":"grid","ink_data":"QUFB","deleted_at":"2026-10-02T00:00:00Z"}}
+]$$));
+select isnt((select v #>> '{results,0,record,deleted_at}' from t where k = 'staleDelete'), null, 'eliminazione del client applicata');
+select is((select v #>> '{results,0,record,background}' from t where k = 'staleDelete'), 'lines', 'sfondo del server conservato');
+
 -- Eliminata sul server, modificata sul client: vince la modifica.
-select public.sync_push('ipad-a', $$[{"entity":"ink_page","base_version":4,"data":{"id":"20000000-0000-4000-8000-000000000101","node_id":"20000000-0000-4000-8000-000000000001","page_no":0,"background":"lines","ink_data":"QUFB","deleted_at":"2026-10-01T00:00:00Z"}}]$$);
+select public.sync_push('ipad-a', $$[{"entity":"ink_page","base_version":5,"data":{"id":"20000000-0000-4000-8000-000000000101","node_id":"20000000-0000-4000-8000-000000000001","page_no":0,"background":"lines","ink_data":"QUFB","deleted_at":"2026-10-01T00:00:00Z"}}]$$);
 select is(
   public.sync_push('ipad-b', $$[{"entity":"ink_page","base_version":3,"data":{"id":"20000000-0000-4000-8000-000000000101","node_id":"20000000-0000-4000-8000-000000000001","page_no":0,"background":"lines","ink_data":"Q0ND"}}]$$)
     #>> '{results,0,record,deleted_at}',

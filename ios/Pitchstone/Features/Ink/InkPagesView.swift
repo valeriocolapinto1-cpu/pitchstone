@@ -8,6 +8,7 @@ struct InkPagesView: View {
     @Environment(NotesModel.self) private var notes
     let nodeID: UUID
     @State private var selectedPage: UUID?
+    @State private var confirmingDelete = false
     @AppStorage("fingerDraws") private var fingerDraws = false
 
     var body: some View {
@@ -16,9 +17,12 @@ struct InkPagesView: View {
             toolbar(pages)
             Divider()
             if let page = pages.first(where: { $0.id == selectedPage }) ?? pages.first {
-                InkPageView(page: page, fingerDraws: fingerDraws)
-                    // Ogni pagina ha la sua tela e il suo stato.
-                    .id(page.id)
+                InkPageView(page: page, fingerDraws: fingerDraws) { moved in
+                    // I tratti sono finiti in una nuova pagina (conflitto con una sync): la si apre.
+                    selectedPage = moved
+                }
+                // Ogni pagina ha la sua tela e il suo stato.
+                .id(page.id)
             } else {
                 ContentUnavailableView {
                     Label("Nessuna pagina", systemImage: "pencil.and.scribble")
@@ -70,12 +74,36 @@ struct InkPagesView: View {
                 Label("Disegna con il dito", systemImage: "hand.draw")
             }
             .toggleStyle(.button)
-            if let current {
+            let trashed = notes.trashedInkPages(of: nodeID)
+            if !trashed.isEmpty {
+                Menu {
+                    ForEach(trashed) { page in
+                        Button {
+                            notes.restoreInkPage(page.id)
+                            selectedPage = page.id
+                        } label: {
+                            Text("Pagina eliminata \(page.deletedAt ?? page.updatedAt, format: .relative(presentation: .named))")
+                        }
+                    }
+                } label: {
+                    Label("Pagine eliminate", systemImage: "arrow.uturn.backward")
+                }
+            }
+            if current != nil {
                 Button(role: .destructive) {
-                    notes.trashInkPage(current.id)
-                    selectedPage = nil
+                    confirmingDelete = true
                 } label: {
                     Label("Elimina pagina", systemImage: "trash")
+                }
+                .confirmationDialog("Eliminare questa pagina?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                    Button("Elimina pagina", role: .destructive) {
+                        if let current {
+                            notes.trashInkPage(current.id)
+                            selectedPage = nil
+                        }
+                    }
+                } message: {
+                    Text("La pagina resta nel cestino per 30 giorni e si può ripristinare.")
                 }
             }
         }
@@ -99,6 +127,7 @@ private struct InkPageView: View {
     @Environment(\.scenePhase) private var scenePhase
     let page: InkPageRecord
     let fingerDraws: Bool
+    let onMoved: (UUID) -> Void
 
     /// Disegno decodificato una volta sola, non a ogni tratto.
     @State private var initial: PKDrawing?
@@ -123,7 +152,10 @@ private struct InkPageView: View {
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .onAppear(perform: reload)
+        .onAppear {
+            // Una nuova comparsa (per esempio un cambio di layout) non deve perdere i tratti in sospeso.
+            if initial == nil { reload() }
+        }
         .task(id: edits) {
             guard edits > 0 else { return }
             do {
@@ -162,12 +194,18 @@ private struct InkPageView: View {
     }
 
     private func save() {
-        guard let drawing = pending else { return }
+        guard let drawing = pending, let loaded = lastData else { return }
         pending = nil
         let data = InkCodec.data(from: drawing)
-        guard data != lastData else { return }
-        lastData = data
-        notes.updateInkPage(page.id) { $0.inkData = data }
+        guard data != loaded else { return }
+        // Il repository confronta con i byte da cui è partita la tela: se una sync li ha
+        // cambiati nel frattempo, i tratti vanno in una nuova pagina invece di sovrascriverli.
+        guard let saved = notes.saveDrawing(data, to: page.id, loadedFrom: loaded) else { return }
+        if saved.id == page.id {
+            lastData = data
+        } else {
+            onMoved(saved.id)
+        }
     }
 }
 
