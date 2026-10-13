@@ -150,8 +150,69 @@ public struct NodeVersionRecord: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+public enum InkBackground: String, Codable, Sendable, CaseIterable {
+    case blank, lines, grid
+}
+
+/// Pagina di disegno di un nodo: tratti PencilKit serializzati (`PKDrawing.dataRepresentation()`).
+public struct InkPageRecord: Codable, Equatable, Sendable, Identifiable {
+    public var id: UUID
+    public var nodeID: UUID
+    public var pageNo: Int
+    public var background: InkBackground
+    /// In JSON viaggia in base64 (comportamento predefinito di JSONEncoder per `Data`).
+    public var inkData: Data
+    public var version: Int
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var deletedAt: Date?
+    public var deviceID: String
+
+    public init(
+        id: UUID = UUID(), nodeID: UUID, pageNo: Int, background: InkBackground = .blank, inkData: Data = Data(),
+        version: Int = 0, createdAt: Date, updatedAt: Date, deletedAt: Date? = nil, deviceID: String
+    ) {
+        self.id = id
+        self.nodeID = nodeID
+        self.pageNo = pageNo
+        self.background = background
+        self.inkData = inkData
+        self.version = version
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+        self.deviceID = deviceID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, background, version
+        case nodeID = "node_id"
+        case pageNo = "page_no"
+        case inkData = "ink_data"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case deletedAt = "deleted_at"
+        case deviceID = "device_id"
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(nodeID, forKey: .nodeID)
+        try c.encode(pageNo, forKey: .pageNo)
+        try c.encode(background, forKey: .background)
+        try c.encode(inkData, forKey: .inkData)
+        try c.encode(version, forKey: .version)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+        try c.encode(deletedAt, forKey: .deletedAt)
+        try c.encode(deviceID, forKey: .deviceID)
+    }
+}
+
 public enum Entity: String, Codable, Sendable {
     case node, edge
+    case inkPage = "ink_page"
 }
 
 /// Voce dell'outbox: una sola per record, le modifiche successive si fondono.

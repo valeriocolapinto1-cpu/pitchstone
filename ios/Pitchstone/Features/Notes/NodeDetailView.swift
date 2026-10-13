@@ -20,13 +20,14 @@ struct NodeDetailView: View {
     @State private var baseline: Draft?
 
     enum Mode: String, CaseIterable, Identifiable {
-        case write, split, preview
+        case write, split, preview, ink
         var id: Self { self }
         var label: LocalizedStringKey {
             switch self {
             case .write: "Scrivi"
             case .split: "Affiancato"
             case .preview: "Anteprima"
+            case .ink: "Penna"
             }
         }
     }
@@ -86,6 +87,8 @@ struct NodeDetailView: View {
                     MarkdownEditor(text: $text)
                 case .preview:
                     preview(node)
+                case .ink:
+                    InkPagesView(nodeID: nodeID)
                 case .split:
                     HStack(spacing: 0) {
                         MarkdownEditor(text: $text)
@@ -152,7 +155,7 @@ struct NodeDetailView: View {
                 ForEach(Mode.allCases) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 320)
+            .frame(maxWidth: 420)
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button {

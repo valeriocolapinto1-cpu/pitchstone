@@ -56,6 +56,9 @@ public final class Repository {
             for edge in store.allEdges() where edge.sourceID == id || edge.targetID == id {
                 if edge.version == 0 { store.removePending(.edge, edge.id) }
             }
+            for page in store.inkPages(of: id) where page.version == 0 {
+                store.removePending(.inkPage, page.id)
+            }
         }
         store.saveNode(node)
         if !Privacy.isSensitive(node) { enqueue(.node, id, version: old.version) }
@@ -105,6 +108,70 @@ public final class Repository {
         if Privacy.isSyncable(edge, in: store) { enqueue(.edge, id, version: edge.version) }
     }
 
+    // MARK: Disegno
+
+    /// Pagine di disegno del nodo, escluse quelle nel cestino.
+    public func inkPages(of nodeID: UUID) -> [InkPageRecord] {
+        store.inkPages(of: nodeID).filter { $0.deletedAt == nil }
+    }
+
+    @discardableResult
+    public func createInkPage(in nodeID: UUID, background: InkBackground = .blank) throws -> InkPageRecord {
+        guard store.node(nodeID) != nil else { throw RepositoryError.notFound }
+        let date = now()
+        let next = (store.inkPages(of: nodeID).map(\.pageNo).max() ?? -1) + 1
+        let page = InkPageRecord(nodeID: nodeID, pageNo: next, background: background,
+                                 createdAt: date, updatedAt: date, deviceID: deviceID)
+        store.saveInkPage(page)
+        if Privacy.isSyncable(page, in: store) { enqueue(.inkPage, page.id, version: 0) }
+        return page
+    }
+
+    @discardableResult
+    public func updateInkPage(_ id: UUID, _ change: (inout InkPageRecord) -> Void) throws -> InkPageRecord {
+        guard let old = store.inkPage(id) else { throw RepositoryError.notFound }
+        var page = old
+        change(&page)
+        page.id = old.id
+        page.nodeID = old.nodeID
+        page.version = old.version
+        page.createdAt = old.createdAt
+        page.updatedAt = now()
+        page.deviceID = deviceID
+        store.saveInkPage(page)
+        if Privacy.isSyncable(page, in: store) { enqueue(.inkPage, id, version: old.version) }
+        return page
+    }
+
+    public func trashInkPage(_ id: UUID) throws {
+        try updateInkPage(id) { $0.deletedAt = now() }
+    }
+
+    public func restoreInkPage(_ id: UUID) throws {
+        try updateInkPage(id) { $0.deletedAt = nil }
+    }
+
+    /// Pagine del nodo nel cestino, la più recente per prima.
+    public func trashedInkPages(of nodeID: UUID) -> [InkPageRecord] {
+        store.inkPages(of: nodeID).filter { $0.deletedAt != nil }
+            .sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
+    }
+
+    /// Salva il disegno di una tela partita dai byte `loadedFrom`. Se nel frattempo la
+    /// pagina è cambiata (una sync ha portato i tratti di un altro dispositivo), i
+    /// tratti della tela vanno in una nuova pagina dello stesso nodo, come fa il
+    /// server in un conflitto: nessuno dei due disegni sovrascrive l'altro.
+    /// Ritorna la pagina in cui è finito il disegno.
+    @discardableResult
+    public func saveDrawing(_ data: Data, to id: UUID, loadedFrom: Data) throws -> InkPageRecord {
+        guard let current = store.inkPage(id) else { throw RepositoryError.notFound }
+        if current.inkData == loadedFrom || current.inkData == data {
+            return try updateInkPage(id) { $0.inkData = data }
+        }
+        let copy = try createInkPage(in: current.nodeID, background: current.background)
+        return try updateInkPage(copy.id) { $0.inkData = data }
+    }
+
     // MARK: Cestino
 
     public func trashedNodes() -> [NodeRecord] {
@@ -121,6 +188,10 @@ public final class Repository {
         where (edge.deletedAt ?? .distantFuture) < cutoff || expired.contains(edge.sourceID) || expired.contains(edge.targetID) {
             store.removePending(.edge, edge.id)
             store.deleteEdge(edge.id)
+        }
+        for page in store.allInkPages() where (page.deletedAt ?? .distantFuture) < cutoff || expired.contains(page.nodeID) {
+            store.removePending(.inkPage, page.id)
+            store.deleteInkPage(page.id)
         }
         for id in expired {
             store.removePending(.node, id)
