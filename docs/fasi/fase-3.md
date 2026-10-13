@@ -1,6 +1,6 @@
 # Fase 3: grafo
 
-Stato: in revisione.
+Stato: completata con #6. I test di serializzazione PencilKit girano ora nella suite dell'app (nel runner di `swift test` su macOS PencilKit va in crash senza bundle id).
 
 ## Obiettivo
 
