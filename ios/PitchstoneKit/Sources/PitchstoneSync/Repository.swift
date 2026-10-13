@@ -1,0 +1,126 @@
+import Foundation
+
+public enum RepositoryError: Error, Equatable {
+    case notFound
+    /// Un nodo già sincronizzato non può diventare sensibile: la sua storia è
+    /// sul server. Va creato un nuovo nodo di salute (ADR 0002).
+    case syncedNodeCannotBecomeSensitive
+    case edgeEndpointMissing
+}
+
+/// Modifiche locali: salva nell'archivio e mette in outbox ciò che può andare al server.
+@MainActor
+public final class Repository {
+    public static let trashRetention: TimeInterval = 30 * 24 * 60 * 60
+
+    private let store: SyncStore
+    private let deviceID: String
+    private let now: () -> Date
+
+    public init(store: SyncStore, deviceID: String, now: @escaping () -> Date = Date.init) {
+        self.store = store
+        self.deviceID = deviceID
+        self.now = now
+    }
+
+    // MARK: Nodi
+
+    @discardableResult
+    public func createNode(
+        type: NodeType, title: String, body: String = "", area: Area, tags: [String] = []
+    ) -> NodeRecord {
+        let date = now()
+        let node = NodeRecord(
+            type: type, title: title, bodyMD: body, area: area, tags: tags,
+            createdAt: date, updatedAt: date, deviceID: deviceID)
+        store.saveNode(node)
+        if !Privacy.isSensitive(node) { enqueue(.node, node.id, version: node.version) }
+        return node
+    }
+
+    @discardableResult
+    public func updateNode(_ id: UUID, _ change: (inout NodeRecord) -> Void) throws -> NodeRecord {
+        guard let old = store.node(id) else { throw RepositoryError.notFound }
+        var node = old
+        change(&node)
+        node.id = old.id
+        node.version = old.version
+        node.createdAt = old.createdAt
+        node.updatedAt = now()
+        node.deviceID = deviceID
+
+        if Privacy.isSensitive(node) && !Privacy.isSensitive(old) {
+            if old.version > 0 { throw RepositoryError.syncedNodeCannotBecomeSensitive }
+            // Mai arrivato al server: basta toglierlo dall'outbox, insieme ai suoi archi.
+            store.removePending(.node, id)
+            for edge in store.allEdges() where edge.sourceID == id || edge.targetID == id {
+                if edge.version == 0 { store.removePending(.edge, edge.id) }
+            }
+        }
+        store.saveNode(node)
+        if !Privacy.isSensitive(node) { enqueue(.node, id, version: old.version) }
+        return node
+    }
+
+    public func trashNode(_ id: UUID) throws {
+        try updateNode(id) { $0.deletedAt = now() }
+    }
+
+    public func restoreNode(_ id: UUID) throws {
+        try updateNode(id) { $0.deletedAt = nil }
+    }
+
+    // MARK: Archi
+
+    @discardableResult
+    public func createEdge(from source: UUID, to target: UUID, kind: EdgeKind, label: String? = nil) throws -> EdgeRecord {
+        guard store.node(source) != nil, store.node(target) != nil else { throw RepositoryError.edgeEndpointMissing }
+        let edge = EdgeRecord(sourceID: source, targetID: target, kind: kind, label: label, createdAt: now())
+        store.saveEdge(edge)
+        if Privacy.isSyncable(edge, in: store) { enqueue(.edge, edge.id, version: 0) }
+        return edge
+    }
+
+    public func trashEdge(_ id: UUID) throws {
+        guard var edge = store.edge(id) else { throw RepositoryError.notFound }
+        edge.deletedAt = now()
+        store.saveEdge(edge)
+        if Privacy.isSyncable(edge, in: store) { enqueue(.edge, id, version: edge.version) }
+    }
+
+    // MARK: Cestino
+
+    public func trashedNodes() -> [NodeRecord] {
+        store.allNodes().filter { $0.deletedAt != nil }
+    }
+
+    /// Elimina definitivamente ciò che è nel cestino da più di 30 giorni,
+    /// con gli archi collegati. Il server fa lo stesso per i dati sincronizzati.
+    @discardableResult
+    public func purgeTrash() -> Int {
+        let cutoff = now().addingTimeInterval(-Self.trashRetention)
+        let expired = Set(store.allNodes().filter { ($0.deletedAt ?? .distantFuture) < cutoff }.map(\.id))
+        for edge in store.allEdges()
+        where (edge.deletedAt ?? .distantFuture) < cutoff || expired.contains(edge.sourceID) || expired.contains(edge.targetID) {
+            store.removePending(.edge, edge.id)
+            store.deleteEdge(edge.id)
+        }
+        for id in expired {
+            store.removePending(.node, id)
+            store.deleteNode(id)
+        }
+        return expired.count
+    }
+
+    // MARK: Outbox
+
+    private func enqueue(_ entity: Entity, _ id: UUID, version: Int) {
+        if var pending = store.pendingChange(entity, id) {
+            pending.revision += 1
+            pending.rejection = nil
+            store.savePending(pending)
+        } else {
+            store.savePending(PendingChange(entity: entity, id: id, baseVersion: version > 0 ? version : nil, revision: 1))
+        }
+    }
+}

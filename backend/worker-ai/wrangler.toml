@@ -2,4 +2,20 @@ name = "ai-proxy"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
-# GEMINI_API_KEY è un secret: wrangler secret put GEMINI_API_KEY
+# Valori pubblici, da compilare prima del deploy. Se mancano, /sync/* risponde
+# 401 (Access) o 503 (Supabase): il Worker non apre mai la sync per errore.
+[vars]
+SUPABASE_URL = ""          # https://<progetto>.supabase.co
+ACCESS_TEAM_DOMAIN = ""    # https://<team>.cloudflareaccess.com
+ACCESS_AUD = ""            # AUD tag dell'applicazione Access
+
+# Anteprime dei branch (Workers Builds esegue `wrangler preview` fuori da main):
+# valori vuoti di proposito, così un'anteprima non raggiunge mai Supabase di
+# produzione e /sync/* resta chiuso. Funziona solo /health.
+[previews.vars]
+SUPABASE_URL = ""
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
+
+# Secret: wrangler secret put GEMINI_API_KEY
+#         wrangler secret put SUPABASE_SECRET_KEY

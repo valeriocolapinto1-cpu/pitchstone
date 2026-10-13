@@ -3,6 +3,10 @@ name: ci-ios
 on:
   push:
     branches: [main]
+    # macOS costa 10x: si parte solo se cambia il codice iOS.
+    paths:
+      - "ios/**"
+      - ".github/workflows/ci-ios.yml"
   workflow_dispatch:
 
 permissions:
@@ -14,6 +18,7 @@ jobs:
     timeout-minutes: 2
     outputs:
       has-project: ${{ steps.check.outputs.has-project }}
+      has-package: ${{ steps.check.outputs.has-package }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,6 +35,24 @@ jobs:
             echo "has-project=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Nessun progetto Xcode: build saltata"
           fi
+          if [ -f ios/PitchstoneKit/Package.swift ]; then
+            echo "has-package=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-package=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Test del package su macOS: include lo strato SwiftData, che su Linux non esiste.
+  package:
+    needs: detect
+    if: needs.detect.outputs.has-package == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: swift --version
+      - run: swift test --package-path ios/PitchstoneKit
 
   # Gira su macOS (costo 10x) solo quando il progetto esiste.
   build:
