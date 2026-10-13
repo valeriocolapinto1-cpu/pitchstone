@@ -16,7 +16,7 @@ struct ImportVaultView: View {
     @State private var area: Area = .studio
 
     enum Phase: Equatable {
-        case start, reading, ready, done(notes: Int, links: Int), failed(String)
+        case start, reading, ready, importing, done(notes: Int, links: Int), failed(String)
     }
 
     var body: some View {
@@ -33,7 +33,9 @@ struct ImportVaultView: View {
                 case .reading:
                     Section { ProgressView("Lettura del vault…") }
                 case .ready:
-                    if let plan { preview(plan) }
+                    if let plan { preview(plan) } else { Section { ProgressView() } }
+                case .importing:
+                    Section { ProgressView("Import in corso…") }
                 case .done(let count, let links):
                     Section {
                         Label("Importate \(count) note e \(links) collegamenti.", systemImage: "checkmark.circle")
@@ -91,10 +93,12 @@ struct ImportVaultView: View {
                     ForEach(existing, id: \.path) { Text($0.path).font(.caption) }
                 }
             }
-            let unreadable = plan.skipped.filter { $0.reason == .tooLarge || $0.reason == .notText }
+            let unreadable = plan.skipped.filter { if case .alreadyExists = $0.reason { false } else { true } }
             if !unreadable.isEmpty {
-                DisclosureGroup("Non lette (troppo grandi o non testo): \(unreadable.count)") {
-                    ForEach(unreadable, id: \.path) { Text($0.path).font(.caption) }
+                DisclosureGroup("Non lette: \(unreadable.count)") {
+                    ForEach(unreadable, id: \.path) { item in
+                        LabeledContent(item.path, value: reason(item.reason)).font(.caption)
+                    }
                 }
             }
             if !plan.unresolvedLinks.isEmpty {
@@ -110,8 +114,13 @@ struct ImportVaultView: View {
         }
         Section {
             Button("Importa \(plan.notes.count) note") {
-                let result = notes.importVault(plan)
-                phase = .done(notes: result.created.count, links: result.links)
+                phase = .importing
+                Task {
+                    // Prima si mostra l'avanzamento, poi parte il lavoro sull'archivio.
+                    try? await Task.sleep(for: .milliseconds(50))
+                    let result = notes.importVault(plan)
+                    phase = .done(notes: result.created.count, links: result.links)
+                }
             }
             .disabled(plan.notes.isEmpty)
         }
@@ -126,16 +135,33 @@ struct ImportVaultView: View {
             do {
                 let read = try await Task.detached(priority: .userInitiated) { try VaultReader.read(at: url) }.value
                 contents = read
-                replan()
                 phase = .ready
+                replan()
             } catch {
                 phase = .failed(String(localized: "Impossibile leggere la cartella: \(error.localizedDescription)"))
             }
         }
     }
 
+    /// Il piano si calcola fuori dal thread principale: con migliaia di note richiede tempo.
     private func replan() {
         guard let contents else { return }
-        plan = notes.importPlan(contents, area: area)
+        let area = area
+        plan = nil
+        Task {
+            let result = await notes.makeImportPlan(contents, area: area)
+            // Nel frattempo l'area può essere cambiata di nuovo: vale l'ultimo calcolo.
+            if self.area == area { plan = result }
+        }
+    }
+
+    private func reason(_ reason: VaultImportPlan.Skipped.Reason) -> String {
+        switch reason {
+        case .alreadyExists: String(localized: "già presente")
+        case .tooLarge: String(localized: "troppo grande")
+        case .notText: String(localized: "non è testo")
+        case .unreadable: String(localized: "non leggibile")
+        case .notDownloaded: String(localized: "non scaricata da iCloud")
+        }
     }
 }

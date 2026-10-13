@@ -24,9 +24,11 @@
 		756D6A9F0D07892B229E0F58 /* PitchstoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5053F071475E3BAABF2B3372 /* PitchstoneApp.swift */; };
 		7FA4AEC5E1E278C4CBB1CDA0 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545EF4415C02A3C61EBACB1E /* MarkdownText.swift */; };
 		8313C93D5B1756560CCF80E3 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EEFD0A781A8FE61C0EADE5C /* RootView.swift */; };
+		A3437F1DE4668C892B477028 /* DemoData.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8C95B9A27C96E56EFD107F4 /* DemoData.swift */; };
 		A4450587FD94DDD6156DF89E /* TrashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E10D0258ADDED2B3CE7892 /* TrashView.swift */; };
 		A52AED7CA3D46D029C83BD45 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5733F1E743390A6407D4C92 /* NodeListView.swift */; };
 		A6D85013C380316B2A69013D /* NotesModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A01535AC82171D720E56D6 /* NotesModelTests.swift */; };
+		C6557C361D25E660F04F886C /* ScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2882FA920340577C2027657F /* ScreenshotTests.swift */; };
 		CDA40A8531EDFDC9F8D36D4C /* ImportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 445ACEAD56808F7612A10382 /* ImportTests.swift */; };
 		D34253DAEECDEC102927174B /* GraphTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6EC95C4857F8B32FE01051 /* GraphTests.swift */; };
 		D4EE802CD51B35C7CE5D2C83 /* PitchstoneStore in Frameworks */ = {isa = PBXBuildFile; productRef = 47F76884D4D4BA64718B775D /* PitchstoneStore */; };
@@ -36,6 +38,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		482261908B1F964DBB1333A0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2B3DF8BC729D644C217202A0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B4F116274379822F0050751A;
+			remoteInfo = Pitchstone;
+		};
 		CCEE5F58C489CB8C26FD51BB /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 2B3DF8BC729D644C217202A0 /* Project object */;
@@ -48,6 +57,7 @@
 /* Begin PBXFileReference section */
 		16405A8644771FA4E4F60459 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		1EEFD0A781A8FE61C0EADE5C /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		2882FA920340577C2027657F /* ScreenshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotTests.swift; sourceTree = "<group>"; };
 		39A01535AC82171D720E56D6 /* NotesModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesModelTests.swift; sourceTree = "<group>"; };
 		3EA1E2F294CD8870BA0E084B /* MarkdownPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPreview.swift; sourceTree = "<group>"; };
 		445ACEAD56808F7612A10382 /* ImportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportTests.swift; sourceTree = "<group>"; };
@@ -70,7 +80,9 @@
 		E60FE387CB2B746DB955900C /* PitchstoneKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PitchstoneKit; path = PitchstoneKit; sourceTree = SOURCE_ROOT; };
 		E6499143325B76914E9EB443 /* Pitchstone.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Pitchstone.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E67BB36987AA7062939CF776 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E8C95B9A27C96E56EFD107F4 /* DemoData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoData.swift; sourceTree = "<group>"; };
 		EE95C1DD03B4B6D8E647AA76 /* GraphScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphScreen.swift; sourceTree = "<group>"; };
+		FBAD4B310379A8A7B5233FF6 /* PitchstoneUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PitchstoneUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,6 +134,7 @@
 			children = (
 				E6499143325B76914E9EB443 /* Pitchstone.app */,
 				B9324011BCB2C5A2F3594F5F /* PitchstoneTests.xctest */,
+				FBAD4B310379A8A7B5233FF6 /* PitchstoneUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -151,6 +164,7 @@
 		6435B4BA27FEFB13673BA598 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				E8C95B9A27C96E56EFD107F4 /* DemoData.swift */,
 				545EF4415C02A3C61EBACB1E /* MarkdownText.swift */,
 				64E43A01FC68B3996D00EB30 /* NotesModel.swift */,
 			);
@@ -173,6 +187,14 @@
 				9B9678BEF2C1BAC5B4E3B315 /* GraphState.swift */,
 			);
 			path = Graph;
+			sourceTree = "<group>";
+		};
+		82ADD4D801567888A3133AF6 /* PitchstoneUITests */ = {
+			isa = PBXGroup;
+			children = (
+				2882FA920340577C2027657F /* ScreenshotTests.swift */,
+			);
+			path = PitchstoneUITests;
 			sourceTree = "<group>";
 		};
 		94E644448B0D5F8E4559CB0C /* Pitchstone */ = {
@@ -201,6 +223,7 @@
 				FDC699CA9F1483F93830B484 /* Packages */,
 				94E644448B0D5F8E4559CB0C /* Pitchstone */,
 				C8630335A702260D6C8E2EC0 /* PitchstoneTests */,
+				82ADD4D801567888A3133AF6 /* PitchstoneUITests */,
 				40F8056973A7F4792FF14186 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -243,6 +266,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		3986B355BF3F547654509F1F /* PitchstoneUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1EDFB7FE67C3388C183DA6CA /* Build configuration list for PBXNativeTarget "PitchstoneUITests" */;
+			buildPhases = (
+				6DDCA86401A7C11DF1720C4D /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				557F51961498F169D0905D00 /* PBXTargetDependency */,
+			);
+			name = PitchstoneUITests;
+			packageProductDependencies = (
+			);
+			productName = PitchstoneUITests;
+			productReference = FBAD4B310379A8A7B5233FF6 /* PitchstoneUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		9AD608DDA3DAD88EB4FC7291 /* PitchstoneTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 7BDD423069227ABB4080BDFE /* Build configuration list for PBXNativeTarget "PitchstoneTests" */;
@@ -293,6 +334,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					3986B355BF3F547654509F1F = {
+						ProvisioningStyle = Automatic;
+						TestTargetID = B4F116274379822F0050751A;
+					};
 					9AD608DDA3DAD88EB4FC7291 = {
 						ProvisioningStyle = Automatic;
 					};
@@ -320,6 +365,7 @@
 			targets = (
 				B4F116274379822F0050751A /* Pitchstone */,
 				9AD608DDA3DAD88EB4FC7291 /* PitchstoneTests */,
+				3986B355BF3F547654509F1F /* PitchstoneUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -336,10 +382,19 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6DDCA86401A7C11DF1720C4D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C6557C361D25E660F04F886C /* ScreenshotTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B2A117DA6EC654A34AEA3688 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A3437F1DE4668C892B477028 /* DemoData.swift in Sources */,
 				4014147E3DC2C57FA5541B9D /* GraphScene.swift in Sources */,
 				E4CD22D63B0C65D5854DCA74 /* GraphScreen.swift in Sources */,
 				2025A527BF842129787F865B /* GraphState.swift in Sources */,
@@ -367,6 +422,11 @@
 			isa = PBXTargetDependency;
 			target = B4F116274379822F0050751A /* Pitchstone */;
 			targetProxy = CCEE5F58C489CB8C26FD51BB /* PBXContainerItemProxy */;
+		};
+		557F51961498F169D0905D00 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B4F116274379822F0050751A /* Pitchstone */;
+			targetProxy = 482261908B1F964DBB1333A0 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -515,6 +575,23 @@
 			};
 			name = Release;
 		};
+		A3D0570A62DD7BEC7488B007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.pitchstone.ipad.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = Pitchstone;
+			};
+			name = Debug;
+		};
 		B516FF1095C3D8F886A7554D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -549,6 +626,23 @@
 			};
 			name = Release;
 		};
+		DC4033E7AC0653B68954788F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.pitchstone.ipad.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = Pitchstone;
+			};
+			name = Release;
+		};
 		EC44F210CCF4702B4D0057EC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -574,6 +668,15 @@
 			buildConfigurations = (
 				12F13F65C212ACE01447B065 /* Debug */,
 				06217439A02DD5F7446C7322 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		1EDFB7FE67C3388C183DA6CA /* Build configuration list for PBXNativeTarget "PitchstoneUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A3D0570A62DD7BEC7488B007 /* Debug */,
+				DC4033E7AC0653B68954788F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

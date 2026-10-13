@@ -163,6 +163,14 @@ final class NotesModel {
         return ObsidianImport.plan(contents, defaultArea: area, existingTitles: titles)
     }
 
+    /// Come `importPlan`, ma calcolato in background.
+    func makeImportPlan(_ contents: VaultContents, area: Area) async -> VaultImportPlan {
+        let titles = activeNodes.map(\.title)
+        return await Task.detached(priority: .userInitiated) {
+            ObsidianImport.plan(contents, defaultArea: area, existingTitles: titles)
+        }.value
+    }
+
     /// Crea i nodi e gli archi del vault. Le note già nell'app che citano i titoli
     /// nuovi con `[[...]]` ricevono i loro archi.
     @discardableResult

@@ -45,6 +45,10 @@ public struct VaultImportPlan: Sendable, Equatable {
             case alreadyExists(title: String)
             case tooLarge
             case notText
+            /// File non leggibile (permessi, errore del disco...).
+            case unreadable
+            /// Nota di iCloud non ancora scaricata sull'iPad.
+            case notDownloaded
         }
 
         public var path: String
@@ -127,13 +131,23 @@ public enum ObsidianImport {
                 let clean = tag.hasPrefix("#") ? String(tag.dropFirst()) : tag
                 if !clean.isEmpty, !tags.contains(where: { NodeTitle.key($0) == NodeTitle.key(clean) }) { tags.append(clean) }
             }
-            if !item.front.otherLines.isEmpty {
-                body += (body.isEmpty ? "" : "\n\n") + "```yaml\n" + item.front.otherLines.joined(separator: "\n") + "\n```\n"
+            let declaredArea = item.front.strings("area").lazy.compactMap(area(named:)).first
+            let declaredType = item.front.strings("type", "tipo").lazy.compactMap(nodeType).first
+            // Restano nella nota le proprietà che l'app non ha assorbito: alias, date,
+            // aree e tipi sconosciuti...
+            var absorbed: Set<String> = ["tags", "tag"]
+            if declaredArea != nil { absorbed.insert("area") }
+            if declaredType != nil { absorbed.formUnion(["type", "tipo"]) }
+            let kept = item.front.lines(excluding: absorbed)
+            if !kept.isEmpty {
+                // Il recinto è più lungo di qualsiasi sequenza di backtick nelle proprietà.
+                let fence = String(repeating: "`", count: max(3, longestBacktickRun(kept) + 1))
+                body += (body.isEmpty ? "" : "\n\n") + fence + "yaml\n" + kept.joined(separator: "\n") + "\n" + fence + "\n"
             }
             notes.append(.init(
                 path: item.file.path, title: titles[i], body: body,
-                area: area(for: item, tags: tags, default: defaultArea),
-                type: item.front.strings("type", "tipo").lazy.compactMap(nodeType).first ?? .concept,
+                area: isHealth(item, tags: tags) ? .salute : declaredArea ?? folderArea(item) ?? defaultArea,
+                type: declaredType ?? .concept,
                 tags: tags, links: links))
         }
 
@@ -164,9 +178,12 @@ public enum ObsidianImport {
             let parts = inner.components(separatedBy: separator)
             let alias = parts.count > 1 ? parts[1...].joined(separator: separator).trimmingCharacters(in: .whitespaces) : nil
             let target = parts[0].trimmingCharacters(in: .whitespaces)
-            let (page, section) = splitSection(target)
+            // Un titolo può contenere # (`C#`): prima si prova il bersaglio intero.
+            let whole = resolver.resolve(target, from: folder)
+            let (page, section) = whole != nil ? (target, nil) : splitSection(target)
+            let resolved = whole ?? (page.isEmpty ? nil : resolver.resolve(page, from: folder))
 
-            if embed, isAttachment(page) {
+            if embed, resolved == nil, isAttachment(page) {
                 // Allegati (PDF, immagini): il testo resta com'è finché non si importano anche loro.
                 result += rest[..<close.upperBound]
                 rest = rest[close.upperBound...]
@@ -178,7 +195,7 @@ public enum ObsidianImport {
             if page.isEmpty {
                 // Link a una sezione della stessa nota: resta il testo.
                 result += alias ?? section ?? ""
-            } else if let title = resolver.resolve(page, from: folder) {
+            } else if let title = resolved {
                 if !links.contains(where: { NodeTitle.key($0) == NodeTitle.key(title) }) { links.append(title) }
                 let label = alias ?? section.map { "\(displayName(page)) > \($0)" }
                     ?? (NodeTitle.key(displayName(page)) == NodeTitle.key(title) ? nil : displayName(page))
@@ -227,7 +244,7 @@ public enum ObsidianImport {
             var i = 0
             while i < chars.count {
                 defer { i += 1 }
-                guard chars[i] == "#", i == 0 || chars[i - 1].isWhitespace || chars[i - 1] == "(" else { continue }
+                guard chars[i] == "#", i == 0 || chars[i - 1].isWhitespace else { continue }
                 var j = i + 1
                 while j < chars.count, chars[j].isLetter || chars[j].isNumber || "_-/".contains(chars[j]) { j += 1 }
                 let tag = String(chars[(i + 1)..<j])
@@ -241,12 +258,33 @@ public enum ObsidianImport {
 
     // MARK: Area e tipo
 
-    private static func area(for item: Parsed, tags: [String], default fallback: Area) -> Area {
-        // Prudenza: una nota segnata come salute resta sul dispositivo.
-        if tags.contains(where: { ["salute", "health"].contains(NodeTitle.key($0)) }) { return .salute }
-        if let value = item.front.strings("area").first, let area = area(named: value) { return area }
-        if let folder = item.file.folders.first, let area = area(named: folder) { return area }
-        return fallback
+    /// Prudenza: una nota che sembra di salute resta sul dispositivo, qualunque area dichiari.
+    /// Tag `salute` o `health`, anche annidati (`salute/visite`), o una cartella Salute a
+    /// qualsiasi livello.
+    private static func isHealth(_ item: Parsed, tags: [String]) -> Bool {
+        let healthTag = tags.contains { tag in
+            let key = NodeTitle.key(tag)
+            return ["salute", "health"].contains { key == $0 || key.hasPrefix($0 + "/") }
+        }
+        let typeIsHealth = item.front.strings("type", "tipo").contains { nodeType($0) == .health }
+        return healthTag || typeIsHealth || item.file.folders.contains { area(named: $0) == .salute }
+    }
+
+    /// La prima cartella, se ha il nome di un'area.
+    private static func folderArea(_ item: Parsed) -> Area? {
+        item.file.folders.first.flatMap(area(named:))
+    }
+
+    private static func longestBacktickRun(_ lines: [String]) -> Int {
+        var longest = 0
+        for line in lines {
+            var run = 0
+            for char in line {
+                run = char == "`" ? run + 1 : 0
+                longest = max(longest, run)
+            }
+        }
+        return longest
     }
 
     private static func area(named name: String) -> Area? {

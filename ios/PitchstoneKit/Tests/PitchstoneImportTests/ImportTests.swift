@@ -12,6 +12,8 @@ func sampleVault() throws -> URL {
     let trash = copy.appendingPathComponent(".trash")
     try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
     try "Nota cancellata [[Limiti]]".write(to: trash.appendingPathComponent("Vecchia.md"), atomically: true, encoding: .utf8)
+    // Nota di iCloud non ancora scaricata: un segnaposto nascosto.
+    try Data().write(to: copy.appendingPathComponent("Progetti/.Bozza.md.icloud"))
     return copy
 }
 
@@ -35,7 +37,7 @@ struct SampleVaultTests {
             "Studio/Analisi 1.md", "Studio/Analisi/Derivate.md", "Studio/Analisi/Limiti.md",
         ])
         #expect(contents.otherFiles == ["allegati/dispensa.pdf"])
-        #expect(contents.skipped.isEmpty)
+        #expect(contents.skipped == [.init(path: "Progetti/Bozza.md", reason: .notDownloaded)])
     }
 
     @Test("piano: titoli, link riscritti, tag, aree e tipi")
@@ -49,8 +51,7 @@ struct SampleVaultTests {
         #expect(limiti.body.hasPrefix("# Limiti\n"))
         #expect(limiti.body.contains("Vedi [[Derivate]] e [[Analisi 1|il programma]]."))
         #expect(limiti.body.contains("x = \"[[Derivate]]\"  # non è un link"), "il codice resta com'è")
-        #expect(limiti.body.hasSuffix("```yaml\ncreated: 2024-03-01\n```\n"), "le proprietà non usate restano nella nota")
-        #expect(!limiti.body.contains("aliases"))
+        #expect(limiti.body.hasSuffix("```yaml\naliases: [Lim, limite]\ncreated: 2024-03-01\n```\n"), "alias e date restano nella nota")
         #expect(limiti.tags == ["analisi", "esame", "teorema"])
         #expect(limiti.area == .studio)
         #expect(limiti.links == ["Derivate", "Analisi 1"])
@@ -73,6 +74,7 @@ struct SampleVaultTests {
         #expect(pitchstone.tags == ["app"])
         #expect(pitchstone.body.contains("![[schema.png]]"), "gli allegati restano finché non si importano")
         #expect(pitchstone.body.contains("\n[[Limiti]]"), "l'embed di una nota diventa un link")
+        #expect(!pitchstone.body.contains("```yaml"), "area, tipo e tag sono diventati proprietà del nodo")
 
         #expect(result.note("Visita")?.area == .salute, "cartella Salute")
         #expect(result.note("Idee sparse")?.area == .salute, "tag #salute: resta sul dispositivo")
@@ -120,9 +122,30 @@ struct SampleVaultTests {
 
         let again = ObsidianImport.plan(contents, defaultArea: .studio, existingTitles: store.allNodes().map(\.title))
         #expect(again.notes.isEmpty)
-        #expect(again.skipped.count == 7)
+        #expect(again.skipped.filter { if case .alreadyExists = $0.reason { true } else { false } }.count == 7)
         _ = VaultImporter.apply(again, to: repository, store: store)
         #expect(store.allNodes().count == 7)
+    }
+}
+
+@Suite("Import di un vault grande")
+struct LargeVaultTests {
+    @MainActor
+    @Test("2000 note con 5 link ciascuna: piano e applicazione in pochi secondi")
+    func largeVault() {
+        let files = (0..<2000).map { i in
+            VaultFile(path: "Cartella \(i % 20)/Nota \(i).md",
+                      text: "Testo della nota \(i) #tag\(i % 7)\n" + (1...5).map { "[[Nota \((i * 7 + $0 * 13) % 2000)]]" }.joined(separator: " "))
+        }
+        let start = Date()
+        let plan = ObsidianImport.plan(VaultContents(notes: files), defaultArea: .studio, existingTitles: [])
+        let store = InMemoryStore()
+        let result = VaultImporter.apply(plan, to: Repository(store: store, deviceID: "ipad"), store: store)
+        let elapsed = Date().timeIntervalSince(start)
+        #expect(result.created.count == 2000)
+        #expect(result.links == store.allEdges().count)
+        #expect(result.links > 9000)
+        #expect(elapsed < 10, "piano e applicazione: \(elapsed) s")
     }
 }
 
@@ -130,10 +153,10 @@ struct SampleVaultTests {
 struct ConversionTests {
     @Test("frontmatter: liste in linea e a righe, virgolette, nessun frontmatter")
     func frontmatter() {
-        let (front, body) = Frontmatter.split("---\ntags:\n  - uno\n  - \"due\"\naliases: ['A', B]\nfonte: libro\n---\n\nTesto")
-        #expect(front.values["tags"] == ["uno", "due"])
-        #expect(front.values["aliases"] == ["A", "B"])
-        #expect(front.otherLines == ["fonte: libro"])
+        let (front, body) = Frontmatter.split("---\ntags:\n  - uno\n  - \"due\"\naliases: ['A', \"Rossi, Mario\"]\nfonte: libro\n---\n\nTesto")
+        #expect(front.strings("tags") == ["uno", "due"])
+        #expect(front.strings("aliases") == ["A", "Rossi, Mario"], "la virgola tra virgolette non separa")
+        #expect(front.lines(excluding: ["tags"]) == ["aliases: ['A', \"Rossi, Mario\"]", "fonte: libro"])
         #expect(body == "Testo")
 
         let plain = Frontmatter.split("Testo\n---\naltro")
@@ -142,12 +165,66 @@ struct ConversionTests {
 
         let unclosed = Frontmatter.split("---\ntitolo: x\nmai chiuso")
         #expect(unclosed.body == "---\ntitolo: x\nmai chiuso", "senza chiusura non è frontmatter")
+
+        let rule = Frontmatter.split("---\nUna riga di testo\nAltra riga\n---\nCorpo")
+        #expect(rule.body == "---\nUna riga di testo\nAltra riga\n---\nCorpo", "righe orizzontali, non proprietà: niente si perde")
     }
 
     @Test("tag: in testo, non nel codice, non i titoli, non le ancore e non i numeri")
     func tags() {
-        let tags = ObsidianImport.inlineTags("# Titolo\n#uno e (#due) e x#tre e #4 e #v2 e `#codice`\n```\n#blocco\n```\n#materia/sotto")
-        #expect(tags == ["uno", "due", "v2", "materia/sotto"])
+        let tags = ObsidianImport.inlineTags("# Titolo\n#uno e [link](#ancora) e x#tre e #4 e #v2 e `#codice`\n```\n#blocco\n```\n#materia/sotto")
+        #expect(tags == ["uno", "v2", "materia/sotto"])
+    }
+
+    @Test("codice dentro una lista e codice indentato restano intatti")
+    func codeInLists() throws {
+        let result = plan([
+            "A.md": "- voce\n\n    ```\n    [[Sub/B]] #codetag\n    ```\n\nTesto\n\n    [[Sub/B]] indentato\n\n<!-- [[Sub/B]] -->",
+            "Sub/B.md": "",
+        ])
+        let note = try #require(result.note("A"))
+        #expect(note.body.contains("    [[Sub/B]] #codetag"))
+        #expect(note.body.contains("    [[Sub/B]] indentato"))
+        #expect(note.body.contains("<!-- [[Sub/B]] -->"))
+        #expect(note.tags.isEmpty)
+        #expect(note.links.isEmpty, "l'app non crea archi dal codice: neanche l'import")
+    }
+
+    @Test("salute: tag annidati, cartelle a ogni livello, vince sull'area dichiarata")
+    func healthDetection() {
+        let result = plan([
+            "Personale/Salute/Visita.md": "Pressione ok.",
+            "Diario/Oggi.md": "Visita #salute/visite fatta.",
+            "Note/Analisi.md": "---\narea: studio\ntags: [health/esami]\n---\nValori del sangue.",
+            "Note/Cura.md": "---\ntype: salute\n---\n",
+            "Note/Normale.md": "#salutare non è salute",
+        ])
+        #expect(result.note("Visita")?.area == .salute)
+        #expect(result.note("Oggi")?.area == .salute)
+        #expect(result.note("Analisi")?.area == .salute)
+        #expect(result.note("Cura")?.area == .salute)
+        #expect(result.note("Normale")?.area == .studio)
+    }
+
+    @Test("proprietà non riconosciute restano; il recinto resiste ai backtick")
+    func unknownProperties() throws {
+        let result = plan(["N.md": "---\narea: università\ntype: lezione\nnota: usa ``` qui\n---\nTesto"])
+        let note = try #require(result.note("N"))
+        #expect(note.area == .studio)
+        #expect(note.type == .concept)
+        #expect(note.body == "Testo\n\n````yaml\narea: università\ntype: lezione\nnota: usa ``` qui\n````\n")
+    }
+
+    @Test("embed di una nota con il punto nel nome e titoli con #")
+    func dottedAndHashTitles() throws {
+        let result = plan([
+            "Lezione 3.2.md": "", "C#.md": "",
+            "Indice.md": "![[Lezione 3.2]] e [[C#]] e [[C#|linguaggio]] e ![[foto.jpeg]]",
+        ])
+        let note = try #require(result.note("Indice"))
+        #expect(note.body == "[[Lezione 3.2]] e [[C#]] e [[C#|linguaggio]] e ![[foto.jpeg]]")
+        #expect(note.links == ["Lezione 3.2", "C#"])
+        #expect(result.unresolvedLinks.isEmpty)
     }
 
     @Test("titoli doppi: la cartella tra parentesi; nodi esistenti non duplicati")
