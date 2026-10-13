@@ -77,9 +77,12 @@ public final class SwiftDataSyncStore: SyncStore {
         save()
     }
 
+    // Niente `context.delete(model:where:)`: la cancellazione in blocco lascia nel
+    // contesto oggetti senza riga, che poi fanno crashare la lettura.
     public func deleteNode(_ id: UUID) {
         if let entity = nodeEntity(id) { context.delete(entity) }
-        try? context.delete(model: NodeVersionEntity.self, where: #Predicate { $0.nodeID == id })
+        let history = FetchDescriptor<NodeVersionEntity>(predicate: #Predicate { $0.nodeID == id })
+        for version in (try? context.fetch(history)) ?? [] { context.delete(version) }
         save()
     }
 
@@ -100,9 +103,11 @@ public final class SwiftDataSyncStore: SyncStore {
         let nodeID = version.nodeID
         let number = version.version
         let id = version.id
-        try? context.delete(
-            model: NodeVersionEntity.self,
-            where: #Predicate { $0.id == id || ($0.nodeID == nodeID && $0.version == number) })
+        let existing = FetchDescriptor<NodeVersionEntity>(
+            predicate: #Predicate { $0.id == id || ($0.nodeID == nodeID && $0.version == number) })
+        for old in (try? context.fetch(existing)) ?? [] { context.delete(old) }
+        // Salvataggio prima dell'inserimento: l'id è unico e potrebbe coincidere.
+        save()
         context.insert(NodeVersionEntity(version))
         save()
     }
