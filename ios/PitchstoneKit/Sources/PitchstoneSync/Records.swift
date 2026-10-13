@@ -236,3 +236,11 @@ public struct PendingChange: Equatable, Sendable {
         self.rejection = rejection
     }
 }
+
+/// Confronto tra titoli dei nodi per i link `[[...]]`: ignora spazi ai bordi, maiuscole e accenti.
+public enum NodeTitle {
+    public static func key(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+}
