@@ -14,7 +14,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # Scrittura solo per pubblicare gli screenshot in refs/screenshots/latest.
+  contents: write
 
 concurrency:
   group: ci-ios-${{ github.ref }}
@@ -71,9 +72,47 @@ jobs:
           -project ios/Pitchstone.xcodeproj
           -scheme Pitchstone
           -destination "id=${{ steps.sim.outputs.udid }}"
+          -resultBundlePath test-results/test.xcresult
           -skipMacroValidation
           -skipPackagePluginValidation
           CODE_SIGNING_ALLOWED=NO
+
+      # Screenshot dei test di interfaccia (PitchstoneUITests), per vedere l'app senza
+      # un iPad. Vanno in un commit nuovo sopra refs/screenshots/latest: un ref che non è
+      # un branch, così nessuna build parte per loro. Non bloccano mai la CI.
+      - name: Pubblica gli screenshot
+        if: always() && hashFiles('test-results/test.xcresult/Info.plist') != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          raw="$RUNNER_TEMP/attachments"
+          out="$RUNNER_TEMP/screenshots"
+          mkdir -p "$raw" "$out"
+          xcrun xcresulttool export attachments --path test-results/test.xcresult --output-path "$raw"
+          python3 - "$raw" "$out" <<'PY'
+          import json, os, re, subprocess, sys
+          raw, out = sys.argv[1], sys.argv[2]
+          for test in json.load(open(os.path.join(raw, "manifest.json"))):
+              for item in test.get("attachments", []):
+                  match = re.match(r"(\d\d-[a-z0-9-]+)", item.get("suggestedHumanReadableName", ""))
+                  if match:
+                      subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "75", "-Z", "1600",
+                                      os.path.join(raw, item["exportedFileName"]),
+                                      "--out", os.path.join(out, match.group(1) + ".jpg")], check=True)
+          PY
+          ls "$out"
+          cd "$out"
+          printf "Screenshot dell'app\n\nBranch: %s\nCommit: %s\n" "$SOURCE_REF" "$SOURCE_SHA" > README.md
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git init -q
+          if git fetch -q --depth 1 "$remote" refs/screenshots/latest; then git reset -q --soft FETCH_HEAD; fi
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "Screenshot di $SOURCE_REF ($SOURCE_SHA)"
+          git push -q "$remote" HEAD:refs/screenshots/latest
 
       # IPA non firmato da installare con Sideloadly (ARCHITETTURA.md, sezione 11).
       - name: IPA non firmato

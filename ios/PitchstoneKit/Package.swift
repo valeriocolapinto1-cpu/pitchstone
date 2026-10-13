@@ -23,7 +23,9 @@ let package = Package(
         .target(name: "PitchstoneStore", dependencies: ["PitchstoneSync"]),
         .target(name: "PitchstoneNotes", dependencies: [.product(name: "Markdown", package: "swift-markdown")]),
         .target(name: "PitchstoneGraph", dependencies: ["PitchstoneSync"]),
-        .target(name: "PitchstoneImport", dependencies: ["PitchstoneSync"]),
+        .target(
+            name: "PitchstoneImport",
+            dependencies: ["PitchstoneSync", .product(name: "Markdown", package: "swift-markdown")]),
         .testTarget(name: "PitchstoneSyncTests", dependencies: ["PitchstoneSync"]),
         .testTarget(name: "PitchstoneStoreTests", dependencies: ["PitchstoneStore", "PitchstoneSync"]),
         .testTarget(name: "PitchstoneNotesTests", dependencies: ["PitchstoneNotes"]),

@@ -5,6 +5,8 @@ Stato: in corso, in tre parti.
 2. Allegati e PDF: bucket privato, file divisi sotto 50 MB, lettore con annotazioni.
 3. OCR di foto e scrittura a mano.
 
+Screenshot automatici: a ogni esecuzione di ci-ios i test di interfaccia (`ios/PitchstoneUITests`) aprono l'app con dati dimostrativi e fotografano le schermate principali; le immagini vanno in `refs/screenshots/latest` (`git fetch origin refs/screenshots/latest`).
+
 ## Obiettivo
 
 Import di vault Obsidian, PDF con annotazioni collegate al grafo, foto di appunti con OCR, scrittura a mano riconosciuta.
