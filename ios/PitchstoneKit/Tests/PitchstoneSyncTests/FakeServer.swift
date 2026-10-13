@@ -10,9 +10,17 @@ final class FakeServer: @unchecked Sendable {
     private(set) var nodes: [UUID: (NodeRecord, Int64)] = [:]
     private(set) var edges: [UUID: (EdgeRecord, Int64)] = [:]
     private var versions: [(NodeVersionRecord, Int64)] = []
+    private(set) var pages: [UUID: (InkPageRecord, Int64)] = [:]
+    /// Byte massimi di una risposta di pull, come sync_pull (circa 4 MB).
+    var maxPullBytes = 4_000_000
+    /// Push ricevuti, per verificare i lotti.
+    private(set) var pushSizes: [Int] = []
     private var purged: [(Entity, UUID, Int64)] = []
 
     func node(_ id: UUID) -> NodeRecord? { lock.withLock { nodes[id]?.0 } }
+    func inkPages(of nodeID: UUID) -> [InkPageRecord] {
+        lock.withLock { pages.values.map(\.0).filter { $0.nodeID == nodeID }.sorted { $0.pageNo < $1.pageNo } }
+    }
     func history(_ id: UUID) -> [NodeVersionRecord] { lock.withLock { versions.map(\.0).filter { $0.nodeID == id } } }
     var nodeCount: Int { lock.withLock { nodes.count } }
 
@@ -23,10 +31,12 @@ final class FakeServer: @unchecked Sendable {
 
     func push(_ request: PushRequest) -> PushResponse {
         lock.withLock {
-            PushResponse(results: request.changes.map { change in
+            pushSizes.append(request.changes.count)
+            return PushResponse(results: request.changes.map { change in
                 switch change.payload {
                 case .node(let n): applyNode(n, base: change.baseVersion, device: request.deviceID)
                 case .edge(let e): applyEdge(e, base: change.baseVersion)
+                case .inkPage(let p): applyInk(p, base: change.baseVersion, device: request.deviceID)
                 }
             })
         }
@@ -92,15 +102,61 @@ final class FakeServer: @unchecked Sendable {
         return PushResult(entity: .edge, id: e.id, status: status, edge: result)
     }
 
+    /// Come sync_apply_ink: in un conflitto la pagina del server resta e il disegno
+    /// del client diventa una nuova pagina dello stesso nodo.
+    private func applyInk(_ p: InkPageRecord, base: Int?, device: String) -> PushResult {
+        guard nodes[p.nodeID] != nil else {
+            return PushResult(entity: .inkPage, id: p.id, status: .rejected, error: "23503")
+        }
+        var result = p
+        result.deviceID = device
+        let status: PushResult.Status
+        if let cur = pages[p.id]?.0 {
+            if base == cur.version {
+                status = .updated
+                result.version = cur.version + 1
+            } else if cur.inkData == p.inkData {
+                status = .merged
+                result = cur
+                result.version = cur.version + 1
+            } else if cur.deletedAt != nil, p.deletedAt == nil {
+                status = .merged
+                result.version = cur.version + 1
+            } else {
+                status = .merged
+                result = cur
+                if p.deletedAt == nil, !p.inkData.isEmpty {
+                    let nextPage = (pages.values.filter { $0.0.nodeID == p.nodeID }.map(\.0.pageNo).max() ?? -1) + 1
+                    let copy = InkPageRecord(nodeID: p.nodeID, pageNo: nextPage, background: p.background, inkData: p.inkData,
+                                             version: 1, createdAt: Date(), updatedAt: Date(), deviceID: device)
+                    pages[copy.id] = (copy, next())
+                }
+                return PushResult(entity: .inkPage, id: p.id, status: status, inkPage: result)
+            }
+        } else {
+            status = .created
+            result.version = 1
+        }
+        pages[p.id] = (result, next())
+        return PushResult(entity: .inkPage, id: p.id, status: status, inkPage: result)
+    }
+
     func pull(_ request: PullRequest) -> PullResponse {
         lock.withLock {
             var all: [(Int64, IncomingChange)] = []
             all += nodes.values.map { ($0.1, .node($0.0)) }
             all += edges.values.map { ($0.1, .edge($0.0)) }
             all += versions.map { ($0.1, .nodeVersion($0.0)) }
+            all += pages.values.map { ($0.1, .inkPage($0.0)) }
             all += purged.map { ($0.2, .purged($0.0, $0.1)) }
             let newer = all.filter { $0.0 > request.cursor }.sorted { $0.0 < $1.0 }
-            let page = Array(newer.prefix(request.limit))
+            var page: [(Int64, IncomingChange)] = []
+            var bytes = 0
+            for item in newer.prefix(request.limit) {
+                if case .inkPage(let p) = item.1 { bytes += p.inkData.count * 4 / 3 } else { bytes += 300 }
+                if bytes > maxPullBytes, !page.isEmpty { break }
+                page.append(item)
+            }
             return PullResponse(changes: page.map(\.1), cursor: page.last?.0 ?? request.cursor,
                                 hasMore: newer.count > page.count)
         }
@@ -114,6 +170,10 @@ final class FakeServer: @unchecked Sendable {
                 || (e.deletedAt ?? .distantFuture) < cutoff {
                 edges[id] = nil
                 purged.append((.edge, id, next()))
+            }
+            for (id, (p, _)) in pages where expired.contains(p.nodeID) || (p.deletedAt ?? .distantFuture) < cutoff {
+                pages[id] = nil
+                purged.append((.inkPage, id, next()))
             }
             for id in expired {
                 nodes[id] = nil

@@ -99,6 +99,19 @@ describe.skipIf(!url || !secretKey || !anonKey)("sync end-to-end", () => {
     expect(merged.results[0].record.body_md).toContain("B2");
     expect(merged.results[0].record.version).toBe(3);
 
+    // Disegno: i byte vanno e tornano in base64 attraverso Worker e PostgREST.
+    const pageID = crypto.randomUUID();
+    const ink = btoa(String.fromCharCode(...Array.from({ length: 300 }, (_, i) => i % 256)));
+    const pushedPage = await post("/sync/push", {
+      device_id: "ipad-a",
+      changes: [{ entity: "ink_page", base_version: null, data: { id: pageID, node_id: id, page_no: 0, background: "grid", ink_data: ink } }],
+    });
+    expect(pushedPage.results[0].status).toBe("created");
+    const pulledPages = await post("/sync/pull", { cursor: start.cursor, limit: 1000 });
+    const page = pulledPages.changes.find((c: { entity: string; data: { id: string } }) => c.entity === "ink_page" && c.data.id === pageID);
+    expect(page.data.ink_data).toBe(ink);
+    expect(page.data.background).toBe("grid");
+
     // Pulizia: nel cestino, poi eliminazione definitiva lato DB alla prossima purge.
     await post("/sync/push", {
       device_id: "ipad-a",

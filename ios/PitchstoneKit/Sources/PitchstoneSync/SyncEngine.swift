@@ -27,6 +27,8 @@ public enum SyncOutcome: Equatable, Sendable {
 @MainActor
 public final class SyncEngine {
     public static let batchSize = 500
+    /// Limite di un push: il Worker accetta 5 MB, i disegni in base64 pesano.
+    public static let maxBatchBytes = 3_500_000
 
     private let store: SyncStore
     private let transport: SyncTransport
@@ -92,30 +94,39 @@ public final class SyncEngine {
         }
     }
 
-    /// Prende le prime voci dell'outbox, nodi prima degli archi (vincoli di chiave esterna).
+    /// Prende le prime voci dell'outbox entro il limite di numero e di byte; nodi prima
+    /// di archi e pagine (vincoli di chiave esterna). La prima voce passa sempre.
     /// Scarta ciò che non esiste più o non può lasciare il dispositivo.
     private func nextBatch(excluding sent: Set<Key>) -> [Snapshot] {
-        var nodes: [Snapshot] = []
-        var edges: [Snapshot] = []
+        var batch: [Snapshot] = []
+        var bytes = 0
         for pending in store.pendingChanges()
         where pending.rejection == nil && !sent.contains(Key(entity: pending.entity, id: pending.id)) {
-            if nodes.count + edges.count == Self.batchSize { break }
-            switch pending.entity {
-            case .node:
-                guard let node = store.node(pending.id), !Privacy.isSensitive(node) else {
-                    store.removePending(.node, pending.id)
-                    continue
-                }
-                nodes.append(Snapshot(pending: pending, change: OutgoingChange(baseVersion: pending.baseVersion, payload: .node(node))))
-            case .edge:
-                guard let edge = store.edge(pending.id), Privacy.isSyncable(edge, in: store) else {
-                    store.removePending(.edge, pending.id)
-                    continue
-                }
-                edges.append(Snapshot(pending: pending, change: OutgoingChange(baseVersion: pending.baseVersion, payload: .edge(edge))))
-            }
+            if batch.count == Self.batchSize { break }
+            guard let change = outgoing(for: pending) else { continue }
+            bytes += change.estimatedBytes
+            // Troppo grande per questo push: resta per il prossimo, salvo che sia l'unica voce.
+            if bytes > Self.maxBatchBytes, !batch.isEmpty { break }
+            batch.append(Snapshot(pending: pending, change: change))
         }
-        return nodes + edges
+        let order: [Entity: Int] = [.node: 0, .edge: 1, .inkPage: 2]
+        return batch.enumerated()
+            .sorted { (order[$0.element.pending.entity]!, $0.offset) < (order[$1.element.pending.entity]!, $1.offset) }
+            .map(\.element)
+    }
+
+    /// Il record attuale da inviare, oppure nil (e la voce lascia l'outbox) se non può partire.
+    private func outgoing(for pending: PendingChange) -> OutgoingChange? {
+        let payload: OutgoingChange.Payload? = switch pending.entity {
+        case .node: store.node(pending.id).flatMap { Privacy.isSensitive($0) ? nil : .node($0) }
+        case .edge: store.edge(pending.id).flatMap { Privacy.isSyncable($0, in: store) ? .edge($0) : nil }
+        case .inkPage: store.inkPage(pending.id).flatMap { Privacy.isSyncable($0, in: store) ? .inkPage($0) : nil }
+        }
+        guard let payload else {
+            store.removePending(pending.entity, pending.id)
+            return nil
+        }
+        return OutgoingChange(baseVersion: pending.baseVersion, payload: payload)
     }
 
     private func apply(_ result: PushResult, for snapshot: Snapshot) {
@@ -133,7 +144,7 @@ public final class SyncEngine {
             }
             return
         }
-        let serverVersion = result.node?.version ?? result.edge?.version ?? 0
+        let serverVersion = result.node?.version ?? result.edge?.version ?? result.inkPage?.version ?? 0
         guard current.revision == snapshot.pending.revision else {
             // Modificato di nuovo durante il push: il contenuto locale resta in outbox.
             // Dopo un merge si riparte dalla versione vecchia, così il server unisce di nuovo
@@ -147,16 +158,24 @@ public final class SyncEngine {
         }
         if let node = result.node {
             store.saveNode(node)
-            retryEdges(touching: node.id)
+            retryDependents(of: node.id)
         }
         if let edge = result.edge { store.saveEdge(edge) }
+        // In un conflitto sul disegno la pagina del server resta com'è: i tratti locali
+        // arrivano con il pull come nuova pagina (copy_id).
+        if let page = result.inkPage { store.saveInkPage(page) }
         store.removePending(entity, id)
     }
 
-    /// Un arco rifiutato perché un estremo mancava sul server riparte quando l'estremo arriva.
-    private func retryEdges(touching nodeID: UUID) {
-        for var pending in store.pendingChanges() where pending.entity == .edge && pending.rejection != nil {
-            guard let edge = store.edge(pending.id), edge.sourceID == nodeID || edge.targetID == nodeID else { continue }
+    /// Archi e pagine rifiutati perché il nodo mancava sul server ripartono quando il nodo arriva.
+    private func retryDependents(of nodeID: UUID) {
+        for var pending in store.pendingChanges() where pending.rejection != nil {
+            let dependent: Bool = switch pending.entity {
+            case .edge: store.edge(pending.id).map { $0.sourceID == nodeID || $0.targetID == nodeID } ?? false
+            case .inkPage: store.inkPage(pending.id)?.nodeID == nodeID
+            case .node: false
+            }
+            guard dependent else { continue }
             pending.rejection = nil
             store.savePending(pending)
         }
@@ -189,6 +208,10 @@ public final class SyncEngine {
             guard store.pendingChange(.edge, edge.id) == nil else { return }
             if let local = store.edge(edge.id), local.version > edge.version { return }
             store.saveEdge(edge)
+        case .inkPage(let page):
+            guard store.pendingChange(.inkPage, page.id) == nil else { return }
+            if let local = store.inkPage(page.id), local.version > page.version { return }
+            store.saveInkPage(page)
         case .nodeVersion(let version):
             // Lo storico può arrivare prima del suo nodo: il nodo ha un server_seq più recente.
             store.saveVersion(version)
@@ -201,9 +224,12 @@ public final class SyncEngine {
                     store.removePending(.edge, edge.id)
                     store.deleteEdge(edge.id)
                 }
+                for page in store.inkPages(of: id) { store.removePending(.inkPage, page.id) }
                 store.deleteNode(id)
             case .edge:
                 store.deleteEdge(id)
+            case .inkPage:
+                store.deleteInkPage(id)
             }
         case .unknown:
             break

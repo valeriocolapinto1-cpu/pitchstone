@@ -22,6 +22,8 @@
 		A52AED7CA3D46D029C83BD45 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5733F1E743390A6407D4C92 /* NodeListView.swift */; };
 		A6D85013C380316B2A69013D /* NotesModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A01535AC82171D720E56D6 /* NotesModelTests.swift */; };
 		D4EE802CD51B35C7CE5D2C83 /* PitchstoneStore in Frameworks */ = {isa = PBXBuildFile; productRef = 47F76884D4D4BA64718B775D /* PitchstoneStore */; };
+		E19B701B71CC48421F4BCDEA /* InkPagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B1DDBD773FCC5998DD8B7D /* InkPagesView.swift */; };
+		F5B1E9E1F63FD78E067593DB /* InkCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C877DDF60C53D22E75F3F36 /* InkCanvas.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -39,6 +41,7 @@
 		1EEFD0A781A8FE61C0EADE5C /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		39A01535AC82171D720E56D6 /* NotesModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesModelTests.swift; sourceTree = "<group>"; };
 		3EA1E2F294CD8870BA0E084B /* MarkdownPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPreview.swift; sourceTree = "<group>"; };
+		4C877DDF60C53D22E75F3F36 /* InkCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkCanvas.swift; sourceTree = "<group>"; };
 		5053F071475E3BAABF2B3372 /* PitchstoneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PitchstoneApp.swift; sourceTree = "<group>"; };
 		545EF4415C02A3C61EBACB1E /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		5F73A6019910145776AECFFD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -46,6 +49,7 @@
 		75E10D0258ADDED2B3CE7892 /* TrashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashView.swift; sourceTree = "<group>"; };
 		7724F679D153B7B756961AE5 /* MarkdownEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownEditor.swift; sourceTree = "<group>"; };
 		907A7B8B7E3BE6255A015B38 /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
+		95B1DDBD773FCC5998DD8B7D /* InkPagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkPagesView.swift; sourceTree = "<group>"; };
 		B9324011BCB2C5A2F3594F5F /* PitchstoneTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PitchstoneTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D5733F1E743390A6407D4C92 /* NodeListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeListView.swift; sourceTree = "<group>"; };
 		E60FE387CB2B746DB955900C /* PitchstoneKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PitchstoneKit; path = PitchstoneKit; sourceTree = SOURCE_ROOT; };
@@ -109,10 +113,20 @@
 			children = (
 				1A8673072E2A175D25DE0631 /* Editor */,
 				C1795B3ECE844B8189D36135 /* History */,
+				51B9E606B92C849EC8DD3C5D /* Ink */,
 				3E3649A947C5C475CC26EDF5 /* Notes */,
 				AE14BA972FFFE348FA2108D1 /* Settings */,
 			);
 			path = Features;
+			sourceTree = "<group>";
+		};
+		51B9E606B92C849EC8DD3C5D /* Ink */ = {
+			isa = PBXGroup;
+			children = (
+				4C877DDF60C53D22E75F3F36 /* InkCanvas.swift */,
+				95B1DDBD773FCC5998DD8B7D /* InkPagesView.swift */,
+			);
+			path = Ink;
 			sourceTree = "<group>";
 		};
 		6435B4BA27FEFB13673BA598 /* Core */ = {
@@ -281,6 +295,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				29B1B3E9F11C2F86CFFAC620 /* HistoryView.swift in Sources */,
+				F5B1E9E1F63FD78E067593DB /* InkCanvas.swift in Sources */,
+				E19B701B71CC48421F4BCDEA /* InkPagesView.swift in Sources */,
 				14AB01F1D8835D2048C47B56 /* MarkdownEditor.swift in Sources */,
 				34AD84DF4C2DEE2B3C578034 /* MarkdownPreview.swift in Sources */,
 				7FA4AEC5E1E278C4CBB1CDA0 /* MarkdownText.swift in Sources */,

@@ -1,32 +1,33 @@
 # Fase 2: editor e penna
 
-Stato: in corso. Parte 1 (progetto, editor Markdown, storico) in revisione; parte 2 (penna) da iniziare.
+Stato: in revisione. Parte 1 (progetto, editor Markdown, storico) completata con #4; parte 2 (penna) in revisione.
 
 ## Obiettivo
 
-Editor Markdown con anteprima, editor visuale, PencilKit con gli strumenti concordati, sfondi a righe e quadretti. Decisioni in [ADR 0003](../decisioni/0003-app-ed-editor.md).
+Editor Markdown con anteprima, editor visuale, PencilKit con gli strumenti concordati, sfondi a righe e quadretti. Decisioni in [ADR 0003](../decisioni/0003-app-ed-editor.md) e [ADR 0004](../decisioni/0004-disegno.md).
 
 ## Criteri di completamento
 
-- [ ] Scrittura fluida con Pencil. (parte 2)
-- [ ] Il disegno si salva in `pdf_pages` o in un nodo di appunti. (parte 2)
+- [ ] Scrittura fluida con Pencil: tela PencilKit nativa; da verificare sul dispositivo.
+- [x] Il disegno si salva in un nodo di appunti: pagine `ink_pages` del nodo, sincronizzate.
 - [x] Lo storico versioni è accessibile: vista Storico con differenze e ripristino.
 - [x] `ci-ios.yml` esegue `xcodebuild test` su un simulatore iPad, non solo la build.
 
 ## Test
 
-- [ ] Test di serializzazione PKDrawing. (parte 2)
-- [x] Test di rendering Markdown (`PitchstoneNotesTests`, su Linux e macOS).
+- [x] Test di serializzazione PKDrawing (`InkCodecTests`, su macOS, e test dell'app sul simulatore).
+- [x] Test di rendering Markdown (`PitchstoneNotesTests`).
 - [x] Test della barra di formattazione e delle differenze tra versioni.
-- [x] Test dell'app su simulatore (`PitchstoneTests`): modello, link tra nodi, cestino, ripristino.
+- [x] Test della sync del disegno: due dispositivi, conflitto con pagina copiata, salute, lotti limitati in byte, cestino (Swift, pgTAP, end-to-end).
+- [x] Test dell'app su simulatore (`PitchstoneTests`).
 
-## Parte 1
+## Strumenti
 
-- `ios/project.yml` e `ios/Pitchstone.xcodeproj` (XcodeGen).
-- App: elenco dei nodi per area con ricerca, nodo con titolo, tipo, area, tag, editor e anteprima (Scrivi, Affiancato, Anteprima), storico, cestino, impostazioni della sync.
-- `PitchstoneNotes`: `MarkdownRenderer`, `MarkdownFormatting`, `MarkdownLinks`, `LineDiff`.
-- IPA non firmato su `main` come artefatto di `ci-ios`.
+- Penna, evidenziatore, gomma, lazo, righello: palette di sistema di PencilKit.
+- Carta bianca, a righe, a quadretti: per pagina.
+- Forme: riconoscimento di PencilKit, da verificare sul dispositivo.
 
 ## Verifiche su dispositivo
 
-- [ ] Scrittura e anteprima sul tuo iPad (IPA da Sideloadly o build da Xcode).
+- [ ] Scrittura e anteprima Markdown sul tuo iPad.
+- [ ] Pencil: latenza, palette, sfondi, forme.

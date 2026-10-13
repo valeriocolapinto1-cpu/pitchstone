@@ -119,6 +119,53 @@ public final class NodeVersionEntity {
     }
 }
 
+/// Pagina di disegno. I byte del PKDrawing stanno fuori dal database (externalStorage).
+@Model
+public final class InkPageEntity {
+    @Attribute(.unique) public var id: UUID
+    public var nodeID: UUID
+    public var pageNo: Int
+    public var background: String
+    @Attribute(.externalStorage) public var inkData: Data
+    public var version: Int
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var deletedAt: Date?
+    public var deviceID: String
+
+    public init(_ r: InkPageRecord) {
+        id = r.id
+        nodeID = r.nodeID
+        pageNo = r.pageNo
+        background = r.background.rawValue
+        inkData = r.inkData
+        version = r.version
+        createdAt = r.createdAt
+        updatedAt = r.updatedAt
+        deletedAt = r.deletedAt
+        deviceID = r.deviceID
+    }
+
+    func update(from r: InkPageRecord) {
+        nodeID = r.nodeID
+        pageNo = r.pageNo
+        background = r.background.rawValue
+        if inkData != r.inkData { inkData = r.inkData }
+        version = r.version
+        createdAt = r.createdAt
+        updatedAt = r.updatedAt
+        deletedAt = r.deletedAt
+        deviceID = r.deviceID
+    }
+
+    public var record: InkPageRecord {
+        InkPageRecord(
+            id: id, nodeID: nodeID, pageNo: pageNo, background: InkBackground(rawValue: background) ?? .blank,
+            inkData: inkData, version: version, createdAt: createdAt, updatedAt: updatedAt,
+            deletedAt: deletedAt, deviceID: deviceID)
+    }
+}
+
 /// Outbox: una voce per record, ordinata per `sequence`.
 @Model
 public final class OutboxEntity {
@@ -164,7 +211,8 @@ public enum PitchstoneSchema {
     public static func container(inMemory: Bool = false) throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemory)
         let schema = Schema([
-            NodeEntity.self, EdgeEntity.self, NodeVersionEntity.self, OutboxEntity.self, SyncStateEntity.self,
+            NodeEntity.self, EdgeEntity.self, NodeVersionEntity.self, InkPageEntity.self, OutboxEntity.self,
+            SyncStateEntity.self,
         ])
         return try ModelContainer(for: schema, configurations: [configuration])
     }

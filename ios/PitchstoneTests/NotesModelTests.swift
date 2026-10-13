@@ -1,4 +1,5 @@
 import Foundation
+import PencilKit
 import PitchstoneNotes
 import PitchstoneStore
 import PitchstoneSync
@@ -64,6 +65,25 @@ struct NotesModelTests {
         #expect(model.node(node.id)?.bodyMD == "vecchio")
         model.restoreVersion(7, of: node.id)
         #expect(model.errorMessage != nil)
+    }
+
+    @Test("pagine di disegno: creazione, tratti, sfondo, cestino")
+    func inkPages() throws {
+        let node = model.createNode(title: "Appunti")
+        let page = try #require(model.createInkPage(in: node.id, background: .grid))
+        let drawing = PKDrawing(strokes: [PKStroke(
+            ink: PKInk(.pen, color: .black),
+            path: PKStrokePath(controlPoints: [
+                PKStrokePoint(location: .zero, timeOffset: 0, size: CGSize(width: 2, height: 2), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2),
+                PKStrokePoint(location: CGPoint(x: 50, y: 50), timeOffset: 0.1, size: CGSize(width: 2, height: 2), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2),
+            ], creationDate: Date()))])
+        model.updateInkPage(page.id) { $0.inkData = InkCodec.data(from: drawing) }
+        let stored = try #require(model.inkPages(of: node.id).first)
+        #expect(try InkCodec.drawing(from: stored.inkData).strokes.count == 1)
+        #expect(stored.background == .grid)
+        #expect(model.store.pendingChanges().map(\.entity) == [.node, .inkPage])
+        model.trashInkPage(page.id)
+        #expect(model.inkPages(of: node.id).isEmpty)
     }
 
     @Test("senza indirizzo e token la sync non parte")
