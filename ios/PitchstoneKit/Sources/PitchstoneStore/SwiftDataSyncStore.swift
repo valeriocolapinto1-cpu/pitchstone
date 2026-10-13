@@ -147,6 +147,38 @@ public final class SwiftDataSyncStore: SyncStore {
         save()
     }
 
+    // MARK: Allegati
+
+    private func attachmentEntity(_ id: UUID) -> AttachmentEntity? {
+        var d = FetchDescriptor<AttachmentEntity>(predicate: #Predicate { $0.id == id })
+        d.fetchLimit = 1
+        return try? context.fetch(d).first
+    }
+
+    public func attachment(_ id: UUID) -> AttachmentRecord? { attachmentEntity(id)?.record }
+
+    public func allAttachments() -> [AttachmentRecord] {
+        let d = FetchDescriptor<AttachmentEntity>(sortBy: [SortDescriptor(\.createdAt)])
+        return ((try? context.fetch(d)) ?? []).compactMap(\.record)
+    }
+
+    public func saveAttachment(_ attachment: AttachmentRecord) {
+        if let existing = attachmentEntity(attachment.id) {
+            existing.update(from: attachment)
+        } else {
+            context.insert(AttachmentEntity(attachment))
+        }
+        save()
+    }
+
+    public func deleteAttachment(_ id: UUID) {
+        if let entity = attachmentEntity(id) { context.delete(entity) }
+        let attachmentID: UUID? = id
+        let pages = FetchDescriptor<InkPageEntity>(predicate: #Predicate { $0.attachmentID == attachmentID })
+        for page in (try? context.fetch(pages)) ?? [] { context.delete(page) }
+        save()
+    }
+
     // MARK: Storico
 
     public func versions(of nodeID: UUID) -> [NodeVersionRecord] {

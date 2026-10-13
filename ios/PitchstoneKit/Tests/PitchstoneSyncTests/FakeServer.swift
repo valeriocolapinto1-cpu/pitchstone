@@ -11,6 +11,12 @@ final class FakeServer: @unchecked Sendable {
     private(set) var edges: [UUID: (EdgeRecord, Int64)] = [:]
     private var versions: [(NodeVersionRecord, Int64)] = []
     private(set) var pages: [UUID: (InkPageRecord, Int64)] = [:]
+    private(set) var attachments: [UUID: (AttachmentRecord, Int64)] = [:]
+    /// Il bucket privato: percorso → byte.
+    private(set) var bucket: [String: Data] = [:]
+    /// Le parti più grandi non entrano (limite di Supabase per file).
+    var maxObjectBytes = 50_000_000
+    private(set) var largestObject = 0
     /// Byte massimi di una risposta di pull, come sync_pull (circa 4 MB).
     var maxPullBytes = 4_000_000
     /// Push ricevuti, per verificare i lotti.
@@ -37,6 +43,7 @@ final class FakeServer: @unchecked Sendable {
                 case .node(let n): applyNode(n, base: change.baseVersion, device: request.deviceID)
                 case .edge(let e): applyEdge(e, base: change.baseVersion)
                 case .inkPage(let p): applyInk(p, base: change.baseVersion, device: request.deviceID)
+                case .attachment(let a): applyAttachment(a, base: change.baseVersion, device: request.deviceID)
                 }
             })
         }
@@ -128,6 +135,7 @@ final class FakeServer: @unchecked Sendable {
                 if p.deletedAt == nil, !p.inkData.isEmpty {
                     let nextPage = (pages.values.filter { $0.0.nodeID == p.nodeID }.map(\.0.pageNo).max() ?? -1) + 1
                     let copy = InkPageRecord(nodeID: p.nodeID, pageNo: nextPage, background: p.background, inkData: p.inkData,
+                                             attachmentID: cur.attachmentID, pdfPage: cur.pdfPage,
                                              version: 1, createdAt: Date(), updatedAt: Date(), deviceID: device)
                     pages[copy.id] = (copy, next())
                 }
@@ -141,6 +149,47 @@ final class FakeServer: @unchecked Sendable {
         return PushResult(entity: .inkPage, id: p.id, status: status, inkPage: result)
     }
 
+    /// Come sync_apply_attachment: il contenuto non cambia, un ripristino vince.
+    private func applyAttachment(_ a: AttachmentRecord, base: Int?, device: String) -> PushResult {
+        if let nodeID = a.nodeID, nodes[nodeID] == nil {
+            return PushResult(entity: .attachment, id: a.id, status: .rejected, error: "23503")
+        }
+        var result = a
+        result.deviceID = device
+        let status: PushResult.Status
+        if let cur = attachments[a.id]?.0 {
+            guard cur.sha256 == a.sha256, cur.sizeBytes == a.sizeBytes, cur.partCount == a.partCount else {
+                return PushResult(entity: .attachment, id: a.id, status: .rejected, error: "22023")
+            }
+            status = base == cur.version ? .updated : .merged
+            if status == .merged { result.deletedAt = a.deletedAt == nil ? nil : (cur.deletedAt ?? a.deletedAt) }
+            result.version = cur.version + 1
+        } else {
+            status = .created
+            result.version = 1
+        }
+        attachments[a.id] = (result, next())
+        purged.removeAll { $0.0 == .attachment && $0.1 == a.id }
+        return PushResult(entity: .attachment, id: a.id, status: status, attachment: result)
+    }
+
+    func attachment(_ id: UUID) -> AttachmentRecord? { lock.withLock { attachments[id]?.0 } }
+
+    func store(_ data: Data, at path: String) throws {
+        try lock.withLock {
+            guard data.count <= maxObjectBytes else { throw URLError(.dataLengthExceedsMaximum) }
+            largestObject = max(largestObject, data.count)
+            bucket[path] = data
+        }
+    }
+
+    func object(at path: String) throws -> Data {
+        try lock.withLock {
+            guard let data = bucket[path] else { throw URLError(.fileDoesNotExist) }
+            return data
+        }
+    }
+
     func pull(_ request: PullRequest) -> PullResponse {
         lock.withLock {
             var all: [(Int64, IncomingChange)] = []
@@ -148,6 +197,7 @@ final class FakeServer: @unchecked Sendable {
             all += edges.values.map { ($0.1, .edge($0.0)) }
             all += versions.map { ($0.1, .nodeVersion($0.0)) }
             all += pages.values.map { ($0.1, .inkPage($0.0)) }
+            all += attachments.values.map { ($0.1, .attachment($0.0)) }
             all += purged.map { ($0.2, .purged($0.0, $0.1)) }
             let newer = all.filter { $0.0 > request.cursor }.sorted { $0.0 < $1.0 }
             var page: [(Int64, IncomingChange)] = []
@@ -171,7 +221,19 @@ final class FakeServer: @unchecked Sendable {
                 edges[id] = nil
                 purged.append((.edge, id, next()))
             }
-            for (id, (p, _)) in pages where expired.contains(p.nodeID) || (p.deletedAt ?? .distantFuture) < cutoff {
+            let goneAttachments = Set(attachments.values.map(\.0).filter {
+                ($0.deletedAt ?? .distantFuture) < cutoff || $0.nodeID.map(expired.contains) == true
+            }.map(\.id))
+            for id in goneAttachments {
+                if let a = attachments[id]?.0 {
+                    bucket = bucket.filter { !$0.key.hasPrefix(a.storagePath + "/") }
+                }
+                attachments[id] = nil
+                purged.append((.attachment, id, next()))
+            }
+            for (id, (p, _)) in pages
+            where expired.contains(p.nodeID) || (p.deletedAt ?? .distantFuture) < cutoff
+                || p.attachmentID.map(goneAttachments.contains) == true {
                 pages[id] = nil
                 purged.append((.inkPage, id, next()))
             }
@@ -185,7 +247,7 @@ final class FakeServer: @unchecked Sendable {
 }
 
 /// Trasporto che collega un dispositivo al server finto, con la rete simulabile.
-final class FakeTransport: SyncTransport, @unchecked Sendable {
+final class FakeTransport: SyncTransport, StorageTransport, @unchecked Sendable {
     let server: FakeServer
     private let lock = NSLock()
     private var _online = true
@@ -216,6 +278,39 @@ final class FakeTransport: SyncTransport, @unchecked Sendable {
         guard online else { throw URLError(.notConnectedToInternet) }
         return server.pull(request)
     }
+
+    // URL "firmati" finti: fake://upload/<percorso>.
+    func signedURL(upload: Bool, path: String) async throws -> URL {
+        guard online else { throw URLError(.notConnectedToInternet) }
+        return URL(string: "fake://\(upload ? "upload" : "download")/\(path)")!
+    }
+
+    func put(_ data: Data, to url: URL) async throws {
+        guard online, url.host == "upload" else { throw URLError(.notConnectedToInternet) }
+        try server.store(data, at: String(url.path.dropFirst()))
+    }
+
+    func get(_ url: URL) async throws -> Data {
+        guard online, url.host == "download" else { throw URLError(.notConnectedToInternet) }
+        return try server.object(at: String(url.path.dropFirst()))
+    }
+}
+
+/// File degli allegati in memoria.
+final class MemoryFiles: AttachmentFileStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var files: [UUID: Data] = [:]
+
+    func url(for id: UUID) -> URL { URL(string: "memory://\(id.uuidString)")! }
+    func exists(_ id: UUID) -> Bool { lock.withLock { files[id] != nil } }
+    func read(_ id: UUID) throws -> Data {
+        try lock.withLock {
+            guard let data = files[id] else { throw AttachmentError.missingLocalFile }
+            return data
+        }
+    }
+    func write(_ data: Data, for id: UUID) throws { lock.withLock { files[id] = data } }
+    func remove(_ id: UUID) { lock.withLock { files[id] = nil } }
 }
 
 /// Un dispositivo: archivio locale, repository e motore di sync.
@@ -229,12 +324,15 @@ final class Device {
     let repository: Repository
     let engine: SyncEngine
     let transport: FakeTransport
+    let files = MemoryFiles()
+    let transfer: AttachmentTransfer
     let clock = Clock()
 
     init(_ name: String, server: FakeServer) {
         transport = FakeTransport(server: server)
         let clock = clock
         repository = Repository(store: store, deviceID: name, now: { clock.now })
-        engine = SyncEngine(store: store, transport: transport, deviceID: name)
+        transfer = AttachmentTransfer(transport: transport, files: files)
+        engine = SyncEngine(store: store, transport: transport, deviceID: name, attachments: transfer)
     }
 }

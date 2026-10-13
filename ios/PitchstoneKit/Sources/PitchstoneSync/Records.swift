@@ -162,14 +162,20 @@ public struct InkPageRecord: Codable, Equatable, Sendable, Identifiable {
     public var background: InkBackground
     /// In JSON viaggia in base64 (comportamento predefinito di JSONEncoder per `Data`).
     public var inkData: Data
+    /// Annotazione su un PDF: l'allegato e la sua pagina (da 0). Nil per le pagine del nodo.
+    public var attachmentID: UUID?
+    public var pdfPage: Int?
     public var version: Int
     public var createdAt: Date
     public var updatedAt: Date
     public var deletedAt: Date?
     public var deviceID: String
 
+    public var isPDFAnnotation: Bool { attachmentID != nil }
+
     public init(
         id: UUID = UUID(), nodeID: UUID, pageNo: Int, background: InkBackground = .blank, inkData: Data = Data(),
+        attachmentID: UUID? = nil, pdfPage: Int? = nil,
         version: Int = 0, createdAt: Date, updatedAt: Date, deletedAt: Date? = nil, deviceID: String
     ) {
         self.id = id
@@ -177,6 +183,8 @@ public struct InkPageRecord: Codable, Equatable, Sendable, Identifiable {
         self.pageNo = pageNo
         self.background = background
         self.inkData = inkData
+        self.attachmentID = attachmentID
+        self.pdfPage = pdfPage
         self.version = version
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -189,6 +197,8 @@ public struct InkPageRecord: Codable, Equatable, Sendable, Identifiable {
         case nodeID = "node_id"
         case pageNo = "page_no"
         case inkData = "ink_data"
+        case attachmentID = "attachment_id"
+        case pdfPage = "pdf_page"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case deletedAt = "deleted_at"
@@ -202,6 +212,108 @@ public struct InkPageRecord: Codable, Equatable, Sendable, Identifiable {
         try c.encode(pageNo, forKey: .pageNo)
         try c.encode(background, forKey: .background)
         try c.encode(inkData, forKey: .inkData)
+        try c.encode(attachmentID, forKey: .attachmentID)
+        try c.encode(pdfPage, forKey: .pdfPage)
+        try c.encode(version, forKey: .version)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+        try c.encode(deletedAt, forKey: .deletedAt)
+        try c.encode(deviceID, forKey: .deviceID)
+    }
+}
+
+public enum AttachmentKind: String, Codable, Sendable {
+    case pdf, image, markdown
+}
+
+/// Un file allegato (PDF, immagine). I byte stanno in un file locale e, se l'allegato
+/// può lasciare il dispositivo, nel bucket privato diviso in parti (ADR 0007).
+public struct AttachmentRecord: Codable, Equatable, Sendable, Identifiable {
+    public var id: UUID
+    public var nodeID: UUID?
+    public var kind: AttachmentKind
+    public var fileName: String
+    public var sizeBytes: Int
+    public var pageCount: Int?
+    /// SHA-256 del file intero, esadecimale.
+    public var sha256: String
+    public var partCount: Int
+    public var version: Int
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var deletedAt: Date?
+    public var deviceID: String
+    /// Solo locale: tutte le parti sono nel bucket. Un allegato ricevuto dal server lo è già.
+    public var isUploaded: Bool
+
+    /// Il percorso nel bucket è l'id (vincolo del database).
+    public var storagePath: String { id.uuidString.lowercased() }
+
+    public init(
+        id: UUID = UUID(), nodeID: UUID?, kind: AttachmentKind, fileName: String, sizeBytes: Int, pageCount: Int? = nil,
+        sha256: String, partCount: Int, version: Int = 0, createdAt: Date, updatedAt: Date, deletedAt: Date? = nil,
+        deviceID: String, isUploaded: Bool = false
+    ) {
+        self.id = id
+        self.nodeID = nodeID
+        self.kind = kind
+        self.fileName = fileName
+        self.sizeBytes = sizeBytes
+        self.pageCount = pageCount
+        self.sha256 = sha256
+        self.partCount = partCount
+        self.version = version
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+        self.deviceID = deviceID
+        self.isUploaded = isUploaded
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, sha256, version
+        case nodeID = "node_id"
+        case fileName = "file_name"
+        case sizeBytes = "size_bytes"
+        case pageCount = "page_count"
+        case partCount = "part_count"
+        case storagePath = "storage_path"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case deletedAt = "deleted_at"
+        case deviceID = "device_id"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        nodeID = try c.decodeIfPresent(UUID.self, forKey: .nodeID)
+        kind = try c.decode(AttachmentKind.self, forKey: .kind)
+        fileName = try c.decode(String.self, forKey: .fileName)
+        sizeBytes = try c.decode(Int.self, forKey: .sizeBytes)
+        pageCount = try c.decodeIfPresent(Int.self, forKey: .pageCount)
+        sha256 = try c.decode(String.self, forKey: .sha256)
+        partCount = try c.decode(Int.self, forKey: .partCount)
+        version = try c.decode(Int.self, forKey: .version)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        deletedAt = try c.decodeIfPresent(Date.self, forKey: .deletedAt)
+        deviceID = try c.decode(String.self, forKey: .deviceID)
+        // Arriva dal server: le parti sono già nel bucket.
+        isUploaded = true
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(nodeID, forKey: .nodeID)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(fileName, forKey: .fileName)
+        try c.encode(sizeBytes, forKey: .sizeBytes)
+        try c.encode(pageCount, forKey: .pageCount)
+        try c.encode(sha256, forKey: .sha256)
+        try c.encode(partCount, forKey: .partCount)
+        try c.encode(storagePath, forKey: .storagePath)
         try c.encode(version, forKey: .version)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
@@ -213,6 +325,7 @@ public struct InkPageRecord: Codable, Equatable, Sendable, Identifiable {
 public enum Entity: String, Codable, Sendable {
     case node, edge
     case inkPage = "ink_page"
+    case attachment
 }
 
 /// Voce dell'outbox: una sola per record, le modifiche successive si fondono.

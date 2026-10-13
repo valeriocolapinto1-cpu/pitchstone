@@ -1,5 +1,6 @@
 import PitchstoneSync
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Elenco dei nodi a sinistra, nodo aperto a destra.
 struct RootView: View {
@@ -8,6 +9,7 @@ struct RootView: View {
     @State private var showingTrash = false
     @State private var showingSettings = false
     @State private var showingImport = false
+    @State private var importingDocuments = false
     @State private var showingGraph = false
     @State private var graphState = GraphState()
     /// Nodo aperto dal grafo, in un foglio sopra il grafo.
@@ -42,8 +44,15 @@ struct RootView: View {
                             Label("Cestino", systemImage: "trash")
                         }
                         .labelStyle(.iconOnly)
-                        Button { showingImport = true } label: {
-                            Label("Importa da Obsidian", systemImage: "square.and.arrow.down")
+                        Menu {
+                            Button { showingImport = true } label: {
+                                Label("Vault Obsidian", systemImage: "folder")
+                            }
+                            Button { importingDocuments = true } label: {
+                                Label("PDF e immagini", systemImage: "doc.richtext")
+                            }
+                        } label: {
+                            Label("Importa", systemImage: "square.and.arrow.down")
                         }
                         .labelStyle(.iconOnly)
                         Spacer()
@@ -103,6 +112,23 @@ struct RootView: View {
         }
         .sheet(isPresented: $showingImport) {
             ImportVaultView()
+        }
+        // Ogni PDF o immagine diventa un nodo con il nome del file.
+        .fileImporter(isPresented: $importingDocuments, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            var first: UUID?
+            for url in urls {
+                do {
+                    let id = try notes.importDocument(at: url, area: .studio)
+                    first = first ?? id
+                } catch {
+                    notes.errorMessage = error.localizedDescription
+                }
+            }
+            if let first {
+                showingGraph = false
+                selection = first
+            }
         }
         .alert(
             "Operazione non riuscita",
