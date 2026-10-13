@@ -116,6 +116,67 @@ struct InkSyncTests {
         #expect(b.store.inkPages(of: node.id).isEmpty)
     }
 
+    @Test("una sync arrivata mentre si disegna: i tratti locali vanno in una nuova pagina")
+    func remoteChangeWhileDrawing() async throws {
+        let a = Device("ipad-a", server: server)
+        let b = Device("ipad-b", server: server)
+        let node = a.repository.createNode(type: .concept, title: "Appunti", area: .studio)
+        let page = try a.repository.createInkPage(in: node.id)
+        _ = await a.engine.sync()
+        _ = await b.engine.sync()
+
+        // A apre la tela (byte vuoti); B disegna e sincronizza; A riceve i tratti di B.
+        let loaded = try #require(a.store.inkPage(page.id)).inkData
+        try b.repository.updateInkPage(page.id) { $0.inkData = Data("B".utf8) }
+        _ = await b.engine.sync()
+        _ = await a.engine.sync()
+        #expect(a.store.inkPage(page.id)?.inkData == Data("B".utf8))
+
+        // A salva la tela partita dai byte vecchi.
+        let saved = try a.repository.saveDrawing(Data("A".utf8), to: page.id, loadedFrom: loaded)
+        #expect(saved.id != page.id)
+        _ = await a.engine.sync()
+        _ = await b.engine.sync()
+        for device in [a, b] {
+            let drawings = Set(device.repository.inkPages(of: node.id).map { String(decoding: $0.inkData, as: UTF8.self) })
+            #expect(drawings == ["A", "B"])
+        }
+
+        // Senza cambi nel frattempo il salvataggio resta sulla stessa pagina.
+        let again = try a.repository.saveDrawing(Data("A2".utf8), to: saved.id, loadedFrom: Data("A".utf8))
+        #expect(again.id == saved.id)
+    }
+
+    @Test("una pagina troppo grande resta in outbox e non blocca la sync")
+    func oversizedPageIsParked() async throws {
+        let a = Device("ipad-a", server: server)
+        let node = a.repository.createNode(type: .concept, title: "Appunti", area: .studio)
+        let page = try a.repository.createInkPage(in: node.id)
+        try a.repository.updateInkPage(page.id) { $0.inkData = Data(repeating: 1, count: 3_000_000) }
+        let outcome = await a.engine.sync()
+        #expect(outcome == .synced(pushed: 1, pulled: 2))
+        #expect(server.node(node.id) != nil)
+        #expect(a.engine.rejections.map(\.id) == [page.id])
+    }
+
+    @Test("cestino delle pagine: ripristino")
+    func restorePage() throws {
+        let a = Device("ipad-a", server: server)
+        let node = a.repository.createNode(type: .concept, title: "Appunti", area: .studio)
+        let page = try a.repository.createInkPage(in: node.id)
+        try a.repository.trashInkPage(page.id)
+        #expect(a.repository.trashedInkPages(of: node.id).map(\.id) == [page.id])
+        try a.repository.restoreInkPage(page.id)
+        #expect(a.repository.inkPages(of: node.id).map(\.id) == [page.id])
+    }
+
+    @Test("un'entità eliminata sconosciuta non rompe il pull")
+    func unknownPurgedEntity() throws {
+        let json = #"{"changes":[{"entity":"purged","data":{"entity":"quiz","id":"20000000-0000-4000-8000-000000000101"}}],"cursor":1,"has_more":false}"#
+        let decoded = try WireCoding.decoder().decode(PullResponse.self, from: Data(json.utf8))
+        guard case .unknown = decoded.changes[0] else { Issue.record("atteso .unknown"); return }
+    }
+
     @Test("il disegno viaggia in base64 nel JSON")
     func wireFormat() throws {
         let page = InkPageRecord(nodeID: UUID(), pageNo: 2, background: .lines, inkData: Data([0, 1, 2, 3, 4]),

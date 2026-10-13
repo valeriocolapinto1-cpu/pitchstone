@@ -79,9 +79,9 @@ begin
     outcome := 'updated';
   elsif cur.ink_data = v_ink then
     -- Stessi tratti: conflitto solo apparente (per esempio una risposta persa).
+    -- Lo sfondo resta quello del server, più recente; l'eliminazione del client vale.
     update public.ink_pages set
-      background = v_background,
-      deleted_at = case when cur.deleted_at is not null and v_deleted is not null then greatest(cur.deleted_at, v_deleted) end,
+      deleted_at = coalesce(v_deleted, cur.deleted_at),
       device_id = p_device, version = cur.version + 1
     where id = cur.id returning * into res;
     outcome := 'merged';
@@ -95,7 +95,11 @@ begin
     res := cur;
     outcome := 'merged';
     -- Una pagina eliminata dal client mentre il server la modificava resta com'è sul server.
-    if v_deleted is null and octet_length(v_ink) > 0 then
+    -- Se la copia esiste già (risposta persa e nuovo invio), non se ne crea un'altra.
+    if v_deleted is null and octet_length(v_ink) > 0 and not exists (
+      select 1 from public.ink_pages
+      where node_id = cur.node_id and id <> cur.id and ink_data = v_ink and deleted_at is null
+    ) then
       insert into public.ink_pages (id, node_id, page_no, background, ink_data, version, deleted_at, device_id)
       values (gen_random_uuid(), cur.node_id,
               (select coalesce(max(page_no), -1) + 1 from public.ink_pages where node_id = cur.node_id),
@@ -157,35 +161,48 @@ end;
 $$;
 
 -- Pull a pagine limitate anche in byte (circa 4 MB): con i disegni poche righe
--- possono pesare molto. La prima riga passa sempre, così il pull avanza.
+-- possono pesare molto. La dimensione si stima senza costruire il JSON, che si
+-- costruisce solo per le righe della pagina. server_seq è unico tra tutte le
+-- tabelle (una sola sequence), quindi identifica la riga. La prima riga passa
+-- sempre, così il pull avanza.
 create or replace function sync_pull(p_cursor bigint, p_limit integer default 500)
 returns jsonb language sql stable set search_path = '' as $$
   with candidates as (
     select * from (
-      select 'node' as entity, n.server_seq, to_jsonb(n) as data from public.nodes n where n.server_seq > p_cursor
+      select 'node' as entity, n.server_seq, 600 + octet_length(n.title) + octet_length(n.body_md) as size
+        from public.nodes n where n.server_seq > p_cursor
       union all
-      select 'edge', e.server_seq, to_jsonb(e) from public.edges e where e.server_seq > p_cursor
+      select 'edge', e.server_seq, 400 + coalesce(octet_length(e.label), 0) from public.edges e where e.server_seq > p_cursor
       union all
-      select 'node_version', v.server_seq, to_jsonb(v) from public.node_versions v where v.server_seq > p_cursor
+      select 'node_version', v.server_seq, 300 + octet_length(v.body_md) from public.node_versions v where v.server_seq > p_cursor
       union all
-      select 'ink_page', i.server_seq, public.ink_page_json(i) from public.ink_pages i where i.server_seq > p_cursor
+      select 'ink_page', i.server_seq, 600 + octet_length(i.ink_data) * 4 / 3 from public.ink_pages i where i.server_seq > p_cursor
       union all
-      select 'purged', p.server_seq, to_jsonb(p) from public.purged p where p.server_seq > p_cursor
+      select 'purged', p.server_seq, 200 from public.purged p where p.server_seq > p_cursor
     ) c
     order by server_seq
     limit greatest(1, least(coalesce(p_limit, 500), 1000)) + 1
   ), sized as (
     select *,
       row_number() over (order by server_seq) as rn,
-      sum(octet_length(data::text)) over (order by server_seq) as running_bytes
+      sum(size) over (order by server_seq) as running_bytes
     from candidates
   ), page as (
-    select * from sized
+    select entity, server_seq from sized
     where rn <= greatest(1, least(coalesce(p_limit, 500), 1000))
       and (rn = 1 or running_bytes <= 4000000)
+  ), rows as (
+    select page.entity, page.server_seq, case page.entity
+      when 'node' then (select to_jsonb(n) from public.nodes n where n.server_seq = page.server_seq)
+      when 'edge' then (select to_jsonb(e) from public.edges e where e.server_seq = page.server_seq)
+      when 'node_version' then (select to_jsonb(v) from public.node_versions v where v.server_seq = page.server_seq)
+      when 'ink_page' then (select public.ink_page_json(i) from public.ink_pages i where i.server_seq = page.server_seq)
+      when 'purged' then (select to_jsonb(p) from public.purged p where p.server_seq = page.server_seq)
+    end as data
+    from page
   )
   select jsonb_build_object(
-    'changes', coalesce((select jsonb_agg(jsonb_build_object('entity', entity, 'data', data) order by server_seq) from page), '[]'),
+    'changes', coalesce((select jsonb_agg(jsonb_build_object('entity', entity, 'data', data) order by server_seq) from rows), '[]'),
     'cursor', coalesce((select max(server_seq) from page), p_cursor),
     'has_more', (select count(*) from candidates) > (select count(*) from page)
   );

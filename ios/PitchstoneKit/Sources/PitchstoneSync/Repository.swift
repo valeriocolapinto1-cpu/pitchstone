@@ -147,6 +147,31 @@ public final class Repository {
         try updateInkPage(id) { $0.deletedAt = now() }
     }
 
+    public func restoreInkPage(_ id: UUID) throws {
+        try updateInkPage(id) { $0.deletedAt = nil }
+    }
+
+    /// Pagine del nodo nel cestino, la più recente per prima.
+    public func trashedInkPages(of nodeID: UUID) -> [InkPageRecord] {
+        store.inkPages(of: nodeID).filter { $0.deletedAt != nil }
+            .sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
+    }
+
+    /// Salva il disegno di una tela partita dai byte `loadedFrom`. Se nel frattempo la
+    /// pagina è cambiata (una sync ha portato i tratti di un altro dispositivo), i
+    /// tratti della tela vanno in una nuova pagina dello stesso nodo, come fa il
+    /// server in un conflitto: nessuno dei due disegni sovrascrive l'altro.
+    /// Ritorna la pagina in cui è finito il disegno.
+    @discardableResult
+    public func saveDrawing(_ data: Data, to id: UUID, loadedFrom: Data) throws -> InkPageRecord {
+        guard let current = store.inkPage(id) else { throw RepositoryError.notFound }
+        if current.inkData == loadedFrom || current.inkData == data {
+            return try updateInkPage(id) { $0.inkData = data }
+        }
+        let copy = try createInkPage(in: current.nodeID, background: current.background)
+        return try updateInkPage(copy.id) { $0.inkData = data }
+    }
+
     // MARK: Cestino
 
     public func trashedNodes() -> [NodeRecord] {

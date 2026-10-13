@@ -92,9 +92,10 @@ final class PageCanvasView: PKCanvasView {
 }
 
 /// Righe o quadretti, nel colore dei separatori di sistema (si adatta al tema scuro).
+/// Il motivo è una piccola immagine ripetuta: niente bitmap grande quanto la pagina.
 final class PageBackgroundView: UIView {
     var style: InkBackground = .blank {
-        didSet { setNeedsDisplay() }
+        didSet { updatePattern() }
     }
 
     static let lineSpacing: CGFloat = 32
@@ -102,44 +103,45 @@ final class PageBackgroundView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .clear
-        contentMode = .redraw
+        isOpaque = false
+        registerForTraitChanges([UITraitUserInterfaceStyle.self, UITraitAccessibilityContrast.self]) { (view: PageBackgroundView, _) in
+            view.updatePattern()
+        }
+        updatePattern()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) non supportato")
     }
 
-    override func draw(_ rect: CGRect) {
-        guard style != .blank, let context = UIGraphicsGetCurrentContext() else { return }
-        context.setStrokeColor(UIColor.separator.cgColor)
-        context.setLineWidth(1 / max(traitCollection.displayScale, 1))
-        switch style {
-        case .lines:
-            var y = Self.lineSpacing * 2
-            while y < bounds.height {
-                if y >= rect.minY - 1 && y <= rect.maxY + 1 {
-                    context.move(to: CGPoint(x: rect.minX, y: y))
-                    context.addLine(to: CGPoint(x: rect.maxX, y: y))
-                }
-                y += Self.lineSpacing
-            }
-        case .grid:
-            var x = (rect.minX / Self.gridSpacing).rounded(.down) * Self.gridSpacing
-            while x <= rect.maxX {
-                context.move(to: CGPoint(x: x, y: rect.minY))
-                context.addLine(to: CGPoint(x: x, y: rect.maxY))
-                x += Self.gridSpacing
-            }
-            var y = (rect.minY / Self.gridSpacing).rounded(.down) * Self.gridSpacing
-            while y <= rect.maxY {
-                context.move(to: CGPoint(x: rect.minX, y: y))
-                context.addLine(to: CGPoint(x: rect.maxX, y: y))
-                y += Self.gridSpacing
-            }
-        case .blank:
-            break
+    private func updatePattern() {
+        guard let tile = Self.tile(style, traits: traitCollection) else {
+            backgroundColor = .clear
+            return
         }
-        context.strokePath()
+        backgroundColor = UIColor(patternImage: tile)
+    }
+
+    static func tile(_ style: InkBackground, traits: UITraitCollection) -> UIImage? {
+        let spacing: CGFloat
+        switch style {
+        case .blank: return nil
+        case .lines: spacing = lineSpacing
+        case .grid: spacing = gridSpacing
+        }
+        let color = UIColor.separator.resolvedColor(with: traits)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = traits.displayScale > 0 ? traits.displayScale : 2
+        format.opaque = false
+        let width = style == .grid ? spacing : 64
+        return UIGraphicsImageRenderer(size: CGSize(width: width, height: spacing), format: format).image { context in
+            color.setFill()
+            let line = 1 / format.scale
+            // Riga in fondo alla cella; per i quadretti anche la verticale a destra.
+            context.fill(CGRect(x: 0, y: spacing - line, width: width, height: line))
+            if style == .grid {
+                context.fill(CGRect(x: width - line, y: 0, width: line, height: spacing))
+            }
+        }
     }
 }
