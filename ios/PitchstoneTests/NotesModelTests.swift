@@ -88,7 +88,7 @@ struct MarkdownTextTests {
         #expect(MarkdownText.nodeTitle(from: url) == "Serie di Taylor è & co")
         #expect(MarkdownText.nodeTitle(from: try #require(URL(string: "https://example.org"))) == nil)
         let text = MarkdownText.attributed([InlineRun("Taylor", link: .wiki("Serie di Taylor"))])
-        #expect(text.runs.first?.link == url)
+        #expect(text.runs.first?.link == MarkdownText.nodeURL("Serie di Taylor"))
     }
 
     @Test("tag: spazi, cancelletti e duplicati")

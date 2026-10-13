@@ -11,8 +11,9 @@ struct RootView: View {
     var body: some View {
         NavigationSplitView {
             NodeListView(selection: $selection)
-                .toolbar {
-                    ToolbarItemGroup(placement: .bottomBar) {
+                // Barra in fondo all'elenco: la bottomBar della sidebar non è supportata da UIKit.
+                .safeAreaInset(edge: .bottom) {
+                    HStack {
                         Button { showingTrash = true } label: {
                             Label("Cestino", systemImage: "trash")
                         }
@@ -23,6 +24,10 @@ struct RootView: View {
                             Label("Impostazioni", systemImage: "gearshape")
                         }
                     }
+                    .labelStyle(.iconOnly)
+                    .padding(.horizontal)
+                    .padding(.vertical, 10)
+                    .background(.bar)
                 }
         } detail: {
             if let selection, let node = notes.node(selection), node.deletedAt == nil {
