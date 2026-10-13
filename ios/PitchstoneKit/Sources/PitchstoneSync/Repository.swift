@@ -107,26 +107,29 @@ public final class Repository {
     public func syncLinkEdges(from nodeID: UUID, to targets: Set<UUID>) {
         guard store.node(nodeID) != nil else { return }
         let wanted = targets.subtracting([nodeID]).filter { store.node($0) != nil }
-        var existing: [UUID: EdgeRecord] = [:]
+        // Tutti gli archi link del nodo per destinazione: possono esserci doppioni,
+        // per esempio creati da due dispositivi prima di sincronizzarsi.
+        var existing: [UUID: [EdgeRecord]] = [:]
         for edge in store.allEdges() where edge.sourceID == nodeID && edge.kind == .link {
-            // Se ci sono doppioni, si tiene quello attivo.
-            if existing[edge.targetID]?.deletedAt == nil, existing[edge.targetID] != nil { continue }
-            existing[edge.targetID] = edge
+            existing[edge.targetID, default: []].append(edge)
         }
         for target in wanted {
-            if let edge = existing[target] {
-                if edge.deletedAt != nil {
-                    var restored = edge
-                    restored.deletedAt = nil
-                    store.saveEdge(restored)
-                    if Privacy.isSyncable(restored, in: store) { enqueue(.edge, edge.id, version: edge.version) }
-                }
+            let edges = existing[target] ?? []
+            let active = edges.filter { $0.deletedAt == nil }.sorted { $0.createdAt < $1.createdAt }
+            if let keep = active.first {
+                // Un solo arco attivo per destinazione: gli altri vanno nel cestino.
+                for duplicate in active where duplicate.id != keep.id { try? trashEdge(duplicate.id) }
+            } else if let trashed = edges.max(by: { ($0.deletedAt ?? .distantPast) < ($1.deletedAt ?? .distantPast) }) {
+                var restored = trashed
+                restored.deletedAt = nil
+                store.saveEdge(restored)
+                if Privacy.isSyncable(restored, in: store) { enqueue(.edge, trashed.id, version: trashed.version) }
             } else {
                 _ = try? createEdge(from: nodeID, to: target, kind: .link)
             }
         }
-        for (target, edge) in existing where !wanted.contains(target) && edge.deletedAt == nil {
-            try? trashEdge(edge.id)
+        for (target, edges) in existing where !wanted.contains(target) {
+            for edge in edges where edge.deletedAt == nil { try? trashEdge(edge.id) }
         }
     }
 

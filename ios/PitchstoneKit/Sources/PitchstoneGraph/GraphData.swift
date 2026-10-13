@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 import PitchstoneSync
 
 /// Grafo pronto per il layout e il disegno: nodi attivi e archi tra nodi attivi,
@@ -33,12 +36,12 @@ public struct GraphData: Sendable, Equatable {
         for (i, node) in active.enumerated() { index[node.id] = i }
 
         var degree = [Int](repeating: 0, count: active.count)
-        var seen = Set<[Int]>()
+        var seen = Set<Int64>()
         var edges: [Edge] = []
         for edge in edgeRecords where edge.deletedAt == nil {
             guard let s = index[edge.sourceID], let t = index[edge.targetID], s != t else { continue }
             // Un solo arco per coppia nel disegno, anche se ce ne sono di tipi diversi.
-            guard seen.insert([min(s, t), max(s, t)]).inserted else { continue }
+            guard seen.insert(Int64(min(s, t)) << 32 | Int64(max(s, t))).inserted else { continue }
             edges.append(Edge(source: s, target: t, kind: edge.kind))
             degree[s] += 1
             degree[t] += 1

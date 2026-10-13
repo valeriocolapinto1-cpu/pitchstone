@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// Layout a forze (Fruchterman–Reingold) con repulsione approssimata Barnes–Hut,
 /// O(n log n) per iterazione, e un'attrazione verso il centro dell'area che forma
@@ -9,7 +12,8 @@ public struct GraphLayout: Sendable {
         public var spacing: Double = 60
         public var iterations: Int = 300
         /// Precisione di Barnes–Hut: più alto è più veloce e meno preciso.
-        public var theta: Double = 0.9
+        /// Sotto 1/√2, così una cella che contiene il nodo stesso non viene approssimata.
+        public var theta: Double = 0.7
         /// Forza che tiene i nodi vicini al centro della loro area.
         public var clusterGravity: Double = 0.04
         /// Spostamento massimo iniziale per iterazione; decresce fino a quasi zero.
@@ -34,7 +38,11 @@ public struct GraphLayout: Sendable {
 
     /// Posizioni dei nodi, nell'ordine di `graph.nodes`. `previous` tiene fermi i nodi
     /// già disposti: il grafo non si rimescola a ogni modifica.
-    public func positions(for graph: GraphData, previous: [UUID: CGPoint] = [:]) -> [CGPoint] {
+    /// `shouldStop` interrompe il calcolo (per esempio se la struttura è già cambiata di nuovo):
+    /// in quel caso il risultato è vuoto.
+    public func positions(
+        for graph: GraphData, previous: [UUID: CGPoint] = [:], shouldStop: @Sendable () -> Bool = { false }
+    ) -> [CGPoint] {
         let n = graph.nodes.count
         guard n > 0 else { return [] }
         var x = [Double](repeating: 0, count: n)
@@ -46,7 +54,7 @@ public struct GraphLayout: Sendable {
             let center = AreaLayout.center(of: node.area, nodeCount: n)
             cx[i] = Double(center.x)
             cy[i] = Double(center.y)
-            if let p = previous[node.id] {
+            if let p = previous[node.id], p.x.isFinite, p.y.isFinite {
                 x[i] = Double(p.x)
                 y[i] = Double(p.y)
             } else {
@@ -65,6 +73,7 @@ public struct GraphLayout: Sendable {
         var tree = QuadTree(capacity: n)
 
         for step in 0..<config.iterations {
+            if step % 10 == 0, shouldStop() { return [] }
             let t = config.initialTemperature * (1 - Double(step) / Double(config.iterations)) + 0.5
             for i in 0..<n {
                 dx[i] = 0
@@ -240,9 +249,12 @@ struct QuadTree {
                     // Sovrapposti (anche `i` può far parte dell'aggregato): spinta stabile.
                     if leaf && point[cell] == -2 { m = max(m - 1, 0) }
                     if m == 0 { continue }
-                    ddx = Double(i % 7) - 2.9
-                    ddy = Double(i % 5) - 1.9
-                    d2 = ddx * ddx + ddy * ddy
+                    // Direzione diversa per ogni nodo (angolo aureo): due nodi sovrapposti
+                    // ricevono spinte diverse e si separano.
+                    let angle = Double(i) * 2.399_963_229_728_653
+                    ddx = cos(angle)
+                    ddy = sin(angle)
+                    d2 = 1
                 }
                 let f = k2 * m / d2
                 fx += ddx * f
