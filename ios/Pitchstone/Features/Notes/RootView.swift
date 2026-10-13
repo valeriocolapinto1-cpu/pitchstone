@@ -17,14 +17,15 @@ struct RootView: View {
                         Button { showingTrash = true } label: {
                             Label("Cestino", systemImage: "trash")
                         }
+                        .labelStyle(.iconOnly)
                         Spacer()
                         SyncStatusView()
                         Spacer()
                         Button { showingSettings = true } label: {
                             Label("Impostazioni", systemImage: "gearshape")
                         }
+                        .labelStyle(.iconOnly)
                     }
-                    .labelStyle(.iconOnly)
                     .padding(.horizontal)
                     .padding(.vertical, 10)
                     .background(.bar)
