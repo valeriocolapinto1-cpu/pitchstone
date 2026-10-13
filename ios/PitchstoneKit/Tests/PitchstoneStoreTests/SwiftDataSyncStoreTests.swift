@@ -69,5 +69,19 @@ struct SwiftDataSyncStoreTests {
         _ = repository.createNode(type: .health, title: "privato", area: .studio)
         #expect(store.pendingChanges().map(\.id) == [node.id])
     }
+
+    @Test("modifiche in blocco: tutto salvato, anche oltre un blocco di salvataggio")
+    func batch() {
+        let repository = Repository(store: store, deviceID: "a")
+        var ids: [UUID] = []
+        store.performBatch {
+            for i in 0..<450 { ids.append(repository.createNode(type: .concept, title: "Nodo \(i)", area: .studio).id) }
+            for i in 1..<450 { _ = try? repository.createEdge(from: ids[i - 1], to: ids[i], kind: .link) }
+            #expect(store.node(ids[10]) != nil, "dentro il blocco si leggono anche le modifiche non salvate")
+        }
+        #expect(store.allNodes().count == 450)
+        #expect(store.allEdges().count == 449)
+        #expect(store.pendingChanges().count == 899)
+    }
 }
 #endif

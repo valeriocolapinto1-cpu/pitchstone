@@ -17,7 +17,25 @@ public final class SwiftDataSyncStore: SyncStore {
         context.autosaveEnabled = false
     }
 
+    /// Dentro `performBatch` si salva ogni 200 operazioni invece che a ogni record: le
+    /// ricerche di SwiftData scorrono le modifiche non salvate, quindi non devono crescere troppo.
+    private var batchDepth = 0
+    private var unsavedInBatch = 0
+    private static let batchSize = 200
+
+    public func performBatch(_ body: () -> Void) {
+        batchDepth += 1
+        body()
+        batchDepth -= 1
+        save()
+    }
+
     private func save() {
+        if batchDepth > 0 {
+            unsavedInBatch += 1
+            guard unsavedInBatch >= Self.batchSize else { return }
+        }
+        unsavedInBatch = 0
         do {
             try context.save()
         } catch {
