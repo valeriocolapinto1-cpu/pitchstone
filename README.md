@@ -1,4 +1,4 @@
 Screenshot dell'app
 
 Branch: fase-4-allegati
-Commit: b2fab3bbfdfcc76e8b3ae1d3358a539a5ac5d6d9
+Commit: 20cbf2ce1429cc50c5bba8efd9b60e1dd3ad6022
