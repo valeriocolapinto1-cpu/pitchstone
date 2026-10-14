@@ -1,5 +1,6 @@
 #if canImport(SwiftData)
 import Foundation
+import PitchstoneNotes
 import PitchstoneStore
 import PitchstoneSync
 import Testing
@@ -107,6 +108,24 @@ struct SwiftDataSyncStoreTests {
         store.deleteAttachment(attachment.id)
         #expect(store.attachment(attachment.id) == nil)
         #expect(store.allInkPages().map(\.id) == [page.id], "le annotazioni seguono l'allegato")
+    }
+
+    @Test("indice del testo estratto: sostituzione, impronta, voce vuota")
+    func textIndex() throws {
+        let index = TextIndexStore(container: try PitchstoneSchema.container(inMemory: true))
+        let node = UUID(), source = UUID()
+        let empty = ExtractedText(nodeID: node, sourceID: source, source: .pdf, text: "")
+        index.replace(sourceID: source, fingerprint: "a", with: [
+            ExtractedText(nodeID: node, sourceID: source, source: .pdf, page: 0, text: "uno"),
+            ExtractedText(nodeID: node, sourceID: source, source: .pdf, page: 1, text: "due"),
+        ], placeholder: empty)
+        #expect(index.fingerprint(of: source) == "a")
+        #expect(index.all().map(\.text) == ["uno", "due"])
+        index.replace(sourceID: source, fingerprint: "b", with: [], placeholder: empty)
+        #expect(index.fingerprint(of: source) == "b", "anche senza testo la fonte risulta indicizzata")
+        #expect(index.all().isEmpty)
+        index.remove(sourceID: source)
+        #expect(index.fingerprint(of: source) == nil)
     }
 }
 #endif

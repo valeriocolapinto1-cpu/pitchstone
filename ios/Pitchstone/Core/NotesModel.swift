@@ -29,6 +29,13 @@ final class NotesModel {
     let files: AttachmentFileStore
     /// Scaricamento dei file dal bucket; nil se la sync non è configurata.
     @ObservationIgnored private(set) var transfer: AttachmentTransfer?
+    /// Testo estratto da allegati e scrittura a mano (solo locale).
+    let textIndex: TextIndexStore
+    private(set) var extractedTexts: [ExtractedText] = []
+    /// L'indicizzazione parte da sola dopo le modifiche; nei test si chiama a mano.
+    @ObservationIgnored let autoIndex: Bool
+    @ObservationIgnored var indexing: Task<Void, Never>?
+    @ObservationIgnored var indexAgain = false
     @ObservationIgnored private var engine: SyncEngine?
     @ObservationIgnored private var autoSync: AutoSync?
     @ObservationIgnored private let defaults: UserDefaults
@@ -40,8 +47,13 @@ final class NotesModel {
         case failed(String)
     }
 
-    init(container: ModelContainer, defaults: UserDefaults = .standard, startSync: Bool = true, attachmentsDirectory: URL? = nil) {
+    init(
+        container: ModelContainer, defaults: UserDefaults = .standard, startSync: Bool = true,
+        attachmentsDirectory: URL? = nil, autoIndex: Bool = false
+    ) {
         self.defaults = defaults
+        self.autoIndex = autoIndex
+        textIndex = TextIndexStore(container: container)
         deviceID = Self.deviceID(defaults)
         store = SwiftDataSyncStore(container: container)
         repository = Repository(store: store, deviceID: deviceID)
@@ -50,6 +62,7 @@ final class NotesModel {
         repository.purgeTrash { files.remove($0) }
         reload()
         if startSync { configureSync() }
+        if autoIndex { scheduleIndexing() }
     }
 
     // MARK: Lettura
@@ -57,6 +70,7 @@ final class NotesModel {
     func reload() {
         nodes = store.allNodes()
         edges = store.allEdges()
+        extractedTexts = textIndex.all()
         inkRevision += 1
     }
 
@@ -273,6 +287,7 @@ final class NotesModel {
     }
 
     func changed() {
+        if autoIndex { scheduleIndexing() }
         reload()
         scheduleSync()
     }

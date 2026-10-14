@@ -15,7 +15,7 @@ struct PitchstoneApp: App {
         } catch {
             fatalError("Archivio locale non disponibile: \(error)")
         }
-        let model = NotesModel(container: container, startSync: !testing)
+        let model = NotesModel(container: container, startSync: !testing, autoIndex: true)
         // Screenshot automatici in CI: archivio in memoria con dati dimostrativi.
         if testing && ProcessInfo.processInfo.arguments.contains("-demoData") { model.loadDemoData() }
         _notes = State(initialValue: model)
