@@ -88,6 +88,12 @@ private struct FakeProvider: ChatProvider {
         #expect(pdf?.title == "Cellula · p. 3")
     }
 
+    @Test func savedChatsAreNotSources() {
+        var saved = node("Chat: mitocondrio", "risposta [1]")
+        saved.tags = [ChatTranscript.tag]
+        #expect(Chunker.corpus(nodes: [saved], extracted: []).isEmpty)
+    }
+
     @Test func emptyNodeCountsForItsTitle() {
         let chunks = Chunker.chunks(of: node("Derivata", ""))
         #expect(chunks.map(\.text) == ["Derivata"])
@@ -143,6 +149,14 @@ private struct FakeProvider: ChatProvider {
         #expect(prompt.sources.count < candidates.count)
         // Si tiene la parte più recente della conversazione.
         #expect(prompt.history.last == history.last)
+    }
+
+    @Test func capsHistoryAndQuestionLikeTheWorker() {
+        let history = (0..<100).map { ChatMessage(role: $0 % 2 == 0 ? .user : .assistant, text: "ok") }
+        let prompt = PromptBuilder.build(
+            question: String(repeating: "a", count: 30_000), history: history, candidates: [], budget: .gemini, localOnly: false)
+        #expect(prompt.history.count <= PromptBuilder.maxHistory)
+        #expect(prompt.question.count == PromptBuilder.maxQuestionLength)
     }
 
     @Test func numbersSources() {
@@ -240,6 +254,18 @@ private struct FakeProvider: ChatProvider {
         await #expect(throws: ChatError.noProvider) {
             try await ChatRouter(online: nil, local: local).answer("x", history: [], index: index, embedder: nil)
         }
+    }
+
+    @Test func cancelledRequestsDoNotFallBack() async {
+        let online = FakeProvider(kind: .gemini, error: URLError(.cancelled))
+        let local = FakeProvider(kind: .local)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await ChatRouter(online: online, local: local)
+                .answer("mitocondrio?", history: [], index: index, embedder: nil)
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(local.calls.prompts.isEmpty)
     }
 
     @Test func healthChatStaysOnDevice() async throws {

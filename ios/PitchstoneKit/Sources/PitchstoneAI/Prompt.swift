@@ -99,11 +99,17 @@ public enum PromptBuilder {
     Per le formule usa la notazione LaTeX tra $.
     """
 
+    public static let maxQuestionLength = 8000
+    public static let maxHistory = 38
+
     /// Mette nel prompt le fonti più pertinenti finché c'è spazio, poi la
     /// conversazione più recente. La domanda e le istruzioni entrano sempre.
     public static func build(
         question: String, history: [ChatMessage], candidates: [Chunk], budget: TokenBudget, localOnly: Bool
     ) -> ChatPrompt {
+        // Gli stessi limiti del Worker: al più 40 messaggi, domanda sotto i 20.000 caratteri.
+        let question = String(question.prefix(maxQuestionLength))
+        let history = Array(history.suffix(maxHistory))
         let fixed = TokenBudget.estimate(instructions) + TokenBudget.estimate(question) + 20
         var available = budget.total - budget.answer - fixed
 

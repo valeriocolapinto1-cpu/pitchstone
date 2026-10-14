@@ -40,20 +40,24 @@ extension NotesModel {
     /// Una chat già salvata si aggiorna invece di creare un doppione.
     /// La chat di un nodo di salute diventa a sua volta un dato di salute, solo locale.
     @discardableResult
-    func saveChat(_ messages: [ChatMessage], focus: UUID?, existing: UUID?) -> UUID? {
+    func saveChat(_ messages: [ChatMessage], focus: UUID?, existing: UUID?, sensitive: Bool) -> UUID? {
         guard messages.contains(where: { $0.role == .assistant }) else { return nil }
         let origin = focus.flatMap(node)
-        let sensitive = origin.map(Privacy.isSensitive) ?? false
         let body = ChatTranscript.markdown(messages) { self.node($0)?.title }
         let title = ChatTranscript.title(for: messages)
         let id: UUID
-        if let existing, let saved = node(existing), saved.deletedAt == nil {
+        // Una chat di salute non scrive mai in un nodo che si sincronizza (e viceversa).
+        if let existing, let saved = node(existing), saved.deletedAt == nil, Privacy.isSensitive(saved) == sensitive {
             id = existing
             // Il titolo resta quello scelto dall'utente.
             update(id) { $0.bodyMD = body }
         } else {
-            id = createNode(type: .idea, title: title, area: sensitive ? .salute : (origin?.area ?? .studio)).id
-            update(id) { $0.bodyMD = body }
+            let area: Area = sensitive ? .salute : (origin.map { Privacy.isSensitive($0) ? .studio : $0.area } ?? .studio)
+            id = createNode(type: .idea, title: title, area: area).id
+            update(id) {
+                $0.bodyMD = body
+                $0.tags = [ChatTranscript.tag]
+            }
         }
         if let origin {
             let linked = edges.contains {

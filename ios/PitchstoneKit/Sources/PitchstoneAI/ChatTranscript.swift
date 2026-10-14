@@ -3,6 +3,9 @@ import Foundation
 /// Una conversazione salvata come nodo: domande e risposte in Markdown, citazioni
 /// cliccabili e, in fondo, i nodi citati come `[[link]]`, che diventano archi del grafo.
 public enum ChatTranscript {
+    /// Tag dei nodi creati salvando una chat.
+    public static let tag = "chat"
+
     public static func title(for messages: [ChatMessage]) -> String {
         let question = messages.first { $0.role == .user }?.text ?? ""
         let line = question.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""

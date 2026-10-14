@@ -257,6 +257,7 @@ describe("chat", () => {
     expect(body.systemInstruction.parts[0].text).toBe(question.system);
     expect(body.contents.map((c: { role: string }) => c.role)).toEqual(["user", "model", "user"]);
     expect(body.generationConfig.maxOutputTokens).toBe(500);
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
   });
 
   it("usa il modello configurato", async () => {
@@ -291,6 +292,13 @@ describe("chat", () => {
     const failed = await post("/ai/chat", question);
     expect(failed.status).toBe(502);
     expect(JSON.stringify(await failed.json())).not.toContain("dettagli");
+  });
+
+  it("segnala una risposta troncata e gestisce gli errori di rete", async () => {
+    gemini(Response.json({ candidates: [{ content: { parts: [{ text: "Inizio" }] }, finishReason: "MAX_TOKENS" }] }));
+    expect(((await (await post("/ai/chat", question)).json()) as { text: string }).text).toContain("interrotta");
+    gemini(new Response("non json", { status: 200 }));
+    expect((await post("/ai/chat", question)).status).toBe(502);
   });
 
   it("tratta una risposta bloccata come errore", async () => {

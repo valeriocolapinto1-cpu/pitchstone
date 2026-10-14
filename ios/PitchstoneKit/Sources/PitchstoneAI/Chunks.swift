@@ -48,7 +48,10 @@ public enum Chunker {
     /// estratto dai loro allegati e dalle pagine a penna. I nodi di salute non
     /// entrano mai: nessun loro frammento esiste, quindi nessun prompt li contiene.
     public static func corpus(nodes: [NodeRecord], extracted: [ExtractedText]) -> [Chunk] {
-        let allowed = nodes.filter { $0.deletedAt == nil && !Privacy.isSensitive($0) }
+        // Le chat salvate non sono fonti: il modello citerebbe le sue risposte di prima.
+        let allowed = nodes.filter {
+            $0.deletedAt == nil && !Privacy.isSensitive($0) && !$0.tags.contains(ChatTranscript.tag)
+        }
         let byNode = Dictionary(grouping: extracted, by: \.nodeID)
         return allowed.flatMap { chunks(of: $0, extracted: byNode[$0.id] ?? []) }
     }

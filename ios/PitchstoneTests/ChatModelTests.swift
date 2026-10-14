@@ -32,6 +32,17 @@ private final class RecordingProvider: ChatProvider, @unchecked Sendable {
     }
 }
 
+/// Gemini lento: la risposta arriva dopo che la chat è stata azzerata.
+private struct SlowProvider: ChatProvider {
+    let kind = ChatProviderKind.gemini
+    let budget = TokenBudget.gemini
+    func isAvailable() async -> Bool { true }
+    func reply(to prompt: ChatPrompt) async throws -> String {
+        try await Task.sleep(for: .milliseconds(400))
+        return "tardi [1]"
+    }
+}
+
 @MainActor
 @Suite("Chat", .serialized)
 struct ChatModelTests {
@@ -111,12 +122,53 @@ struct ChatModelTests {
         #expect(Privacy.isSensitive(saved))
     }
 
+    @Test("una chat salvata non diventa fonte e non cambia lato se il nodo diventa di salute")
+    func savedChatsStayInTheirLane() async throws {
+        let draft = model.createNode(title: "Bozza", body: "Il mitocondrio produce energia.")
+        let online = RecordingProvider(kind: .gemini)
+        let local = RecordingProvider(kind: .local)
+        model.chatRouterOverride = ChatRouter(online: online, local: local)
+        let chat = ChatModel(focus: draft.id)
+        await chat.ask("mitocondrio", notes: model)
+        chat.save(using: model)
+        let saved = try #require(chat.savedNodeID.flatMap(model.node))
+        #expect(saved.tags == [ChatTranscript.tag])
+
+        // La chat salvata non entra tra le fonti della domanda dopo.
+        await ChatModel().ask("mitocondrio", notes: model)
+        #expect(online.prompts.last?.sources.contains { $0.ref.nodeID == saved.id } == false)
+
+        // Il nodo diventa di salute: la chat non continua e non scrive nel nodo salvato.
+        model.update(draft.id) { $0.area = .salute }
+        await chat.ask("farmaco Xyzolam", notes: model)
+        #expect(chat.draft == "farmaco Xyzolam")
+        #expect(model.node(saved.id)?.bodyMD.contains("Xyzolam") == false)
+        #expect(!(online.prompts + local.prompts).contains { $0.question.contains("Xyzolam") })
+    }
+
+    @Test("Nuova chat annulla la risposta in corso")
+    func resetCancels() async throws {
+        model.createNode(title: "Cellula", body: "Il mitocondrio produce energia.")
+        model.chatRouterOverride = ChatRouter(online: SlowProvider(), local: RecordingProvider(kind: .local))
+        let chat = ChatModel()
+        chat.draft = "mitocondrio"
+        chat.send(using: model)
+        try await Task.sleep(for: .milliseconds(100))
+        chat.reset()
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(chat.messages.isEmpty)
+        #expect(chat.notice == nil)
+        #expect(!chat.answering)
+    }
+
     @Test("senza modelli la chat spiega cosa manca")
     func noProvider() async {
         model.chatRouterOverride = ChatRouter(online: nil, local: nil)
         let chat = ChatModel()
         await chat.ask("ciao", notes: model)
-        #expect(chat.messages.count == 1)
+        // La domanda senza risposta torna nel campo.
+        #expect(chat.messages.isEmpty)
+        #expect(chat.draft == "ciao")
         #expect(chat.notice?.isEmpty == false)
         chat.save(using: model)
         #expect(chat.savedNodeID == nil)

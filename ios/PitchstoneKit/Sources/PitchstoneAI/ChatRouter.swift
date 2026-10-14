@@ -15,6 +15,10 @@ public enum ChatError: Error, Equatable, Sendable {
     /// Un prompt con dati di salute stava per uscire dal dispositivo.
     case sensitiveContent
     case emptyAnswer
+    /// La domanda da sola non entra nei 4.096 token del modello locale.
+    case contextTooLarge
+    /// Il modello locale ha rifiutato di rispondere (filtri di sicurezza).
+    case refused
 }
 
 public struct ChatReply: Sendable, Equatable {
@@ -52,6 +56,8 @@ public struct ChatRouter: Sendable {
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
+                    // "Nuova chat" annulla la richiesta: URLSession risponde con un URLError, non si ripiega.
+                    if Task.isCancelled { throw CancellationError() }
                     onlineError = error
                     // Offline, limite del piano gratuito, Worker irraggiungibile: risponde il modello locale.
                     fallbackReason = String(describing: error)

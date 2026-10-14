@@ -32,11 +32,14 @@ struct LocalModelProvider: ChatProvider {
                         to: prompt.transcript, options: GenerationOptions(maximumResponseTokens: budget.answer))
                     return response.content
                 } catch LanguageModelSession.GenerationError.exceededContextWindowSize(_) {
-                    guard !prompt.sources.isEmpty || !prompt.history.isEmpty else { throw ChatError.noProvider }
+                    guard !prompt.sources.isEmpty || !prompt.history.isEmpty else { throw ChatError.contextTooLarge }
                     prompt.sources = Array(prompt.sources.prefix(prompt.sources.count / 2))
                     prompt.history = Array(prompt.history.suffix(prompt.history.count / 2))
+                } catch LanguageModelSession.GenerationError.guardrailViolation(_) {
+                    throw ChatError.refused
                 }
             }
+            throw ChatError.contextTooLarge
         }
         #endif
         throw ChatError.noProvider

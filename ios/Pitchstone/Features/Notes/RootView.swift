@@ -18,6 +18,9 @@ struct RootView: View {
     @State private var showingChat = false
     @State private var chatScope = ChatPanel.ChatScope.general
     @State private var chats = ChatStore()
+    /// Nodo della chat dedicata: segue l'elenco, non le citazioni, così aprire
+    /// una fonte non nasconde la conversazione che la cita.
+    @State private var chatNodeID: UUID?
     /// Allegato aperto da una citazione, alla pagina citata.
     @State private var reader: ReaderRequest?
 
@@ -36,6 +39,7 @@ struct RootView: View {
         NavigationSplitView {
             NodeListView(selection: Binding(get: { selection }, set: { value in
                 selection = value
+                chatNodeID = value
                 // Scegliere un nodo dall'elenco riporta alla nota.
                 if value != nil { showingGraph = false }
             }))
@@ -116,7 +120,7 @@ struct RootView: View {
         }
         .inspector(isPresented: $showingChat) {
             NavigationStack {
-                ChatPanel(openNodeID: showingGraph ? nil : selection, scope: $chatScope, general: chats.general) {
+                ChatPanel(openNodeID: chatNodeID, scope: $chatScope, general: chats.general) {
                     chats.chat(for: $0)
                 }
                 .navigationTitle("Chat")
@@ -163,6 +167,7 @@ struct RootView: View {
             if let first {
                 showingGraph = false
                 selection = first
+                chatNodeID = first
             }
         }
         .alert(
@@ -183,6 +188,7 @@ extension RootView {
             graphOpen = nil
             showingGraph = false
             selection = nodeID
+            chatNodeID = nodeID
             chatScope = .node
         } else if !showingChat {
             chatScope = .general
@@ -194,7 +200,17 @@ extension RootView {
     private func open(_ ref: SourceRef) {
         if ref.kind == .pdf || ref.kind == .image, let id = ref.sourceID,
            let attachment = notes.attachment(id), attachment.deletedAt == nil {
-            reader = ReaderRequest(attachment: attachment, page: ref.page)
+            let request = ReaderRequest(attachment: attachment, page: ref.page)
+            if graphOpen != nil {
+                // Il lettore a tutto schermo non si apre sopra un foglio: prima si chiude il foglio.
+                graphOpen = nil
+                Task {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    reader = request
+                }
+            } else {
+                reader = request
+            }
             return
         }
         guard let node = notes.node(ref.nodeID), node.deletedAt == nil else {

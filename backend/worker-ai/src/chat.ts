@@ -41,6 +41,15 @@ interface GeminiResponse {
 }
 
 export async function chat(apiKey: string, model: string, request: ChatRequest): Promise<Response> {
+  try {
+    return await callGemini(apiKey, model, request);
+  } catch {
+    // Rete o JSON non valido: il client passa al modello locale.
+    return Response.json({ error: "Gemini non raggiungibile" }, { status: 502 });
+  }
+}
+
+async function callGemini(apiKey: string, model: string, request: ChatRequest): Promise<Response> {
   const upstream = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
@@ -52,7 +61,12 @@ export async function chat(apiKey: string, model: string, request: ChatRequest):
           role: message.role === "assistant" ? "model" : "user",
           parts: [{ text: message.text }],
         })),
-        generationConfig: { maxOutputTokens: request.maxOutputTokens, temperature: 0.3 },
+        // Senza "thinking": i suoi token conterebbero nel limite della risposta e nella quota gratuita.
+        generationConfig: {
+          maxOutputTokens: request.maxOutputTokens,
+          temperature: 0.3,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
     },
   );
@@ -69,6 +83,9 @@ export async function chat(apiKey: string, model: string, request: ChatRequest):
   if (text.trim().length === 0) {
     const reason = data.promptFeedback?.blockReason ?? data.candidates?.[0]?.finishReason ?? "risposta vuota";
     return Response.json({ error: `nessuna risposta (${reason})` }, { status: 502 });
+  }
+  if (data.candidates?.[0]?.finishReason === "MAX_TOKENS") {
+    return Response.json({ text: `${text}\n\n_(Risposta interrotta: troppo lunga.)_` });
   }
   return Response.json({ text });
 }
