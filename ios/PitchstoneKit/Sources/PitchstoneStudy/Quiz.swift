@@ -89,7 +89,8 @@ public enum QuizGenerator {
         {"language":"it","quizzes":[{"kind":"mcq","question":"...","options":["...","...","...","..."],\
         "answer":"...","explanation":"..."}]}. Tipi ammessi: \(kindsText). "mcq": 4 opzioni, "answer" è il testo \
         esatto dell'opzione giusta. "open": domanda aperta, "answer" è la risposta modello in poche frasi. \
-        "calc": esercizio con un solo risultato numerico, "answer" è solo il numero. \
+        "calc": esercizio con un solo risultato numerico, "answer" è solo il numero, con il punto come separatore \
+        decimale e senza separatori delle migliaia. \
         Al massimo \(perNote) quiz, livello di difficoltà \(difficulty) su 5. Usa solo ciò che c'è nell'appunto; \
         "explanation" spiega in una o due frasi perché la risposta è giusta.
         """
@@ -99,7 +100,8 @@ public enum QuizGenerator {
     public static func prompt(for node: NodeRecord, kinds: [QuizKind], difficulty: Int, budget: TokenBudget) -> ChatPrompt {
         let instructions = instructions(kinds: kinds, difficulty: difficulty)
         let free = max(200, budget.total - budget.answer - TokenBudget.estimate(instructions) - 40) * 3
-        let question = "TITOLO: \(node.title)\nAPPUNTO:\n" + String(node.bodyMD.prefix(free - node.title.count - 30))
+        let title = String(node.title.prefix(200))
+        let question = "TITOLO: \(title)\nAPPUNTO:\n" + String(node.bodyMD.prefix(max(0, free - title.count - 30)))
         return ChatPrompt(instructions: instructions, sources: [], history: [], question: question, localOnly: false,
                           includesSources: false)
     }
@@ -134,8 +136,9 @@ public enum QuizGenerator {
             case .open:
                 break
             }
+            // I modelli mettono spesso la risposta giusta per prima: si mescola.
             result.append(QuizRecord(
-                nodeID: nodeID, subject: subject, kind: kind, question: question, options: kind == .mcq ? options : [],
+                nodeID: nodeID, subject: subject, kind: kind, question: question, options: kind == .mcq ? options.shuffled() : [],
                 answer: solution, explanation: (item["explanation"] as? String) ?? "", difficulty: difficulty,
                 language: language, createdAt: now))
             if result.count == perNote { break }
@@ -168,9 +171,18 @@ public enum QuizGrader {
             feedback: correct ? "Giusto." : "Il risultato è \(quiz.answer).")
     }
 
-    /// "3,5", "3.5", "1.234,5", "1e-3", "-2"; frazioni semplici "3/4".
+    /// "3,5", "3.5", "1.234,5", "1.234.567", "1e-3", "−2", "12 m", "15%"; frazioni semplici "3/4".
     public static func number(_ text: String) -> Double? {
-        var t = text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: " ", with: "")
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\u{2212}", with: "-").replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "\u{00A0}", with: "")
+        // Unità o percentuale in fondo: contano solo le cifre.
+        while let last = t.last, last.isLetter || last == "%" || last == "°", !t.hasSuffix("e") {
+            t.removeLast()
+        }
+        // Più punti (o più virgole) sono separatori delle migliaia.
+        if t.filter({ $0 == "." }).count > 1 { t = t.replacingOccurrences(of: ".", with: "") }
+        if t.filter({ $0 == "," }).count > 1 { t = t.replacingOccurrences(of: ",", with: "") }
         if let slash = t.firstIndex(of: "/"), let a = number(String(t[..<slash])), let b = number(String(t[t.index(after: slash)...])), b != 0 {
             return a / b
         }

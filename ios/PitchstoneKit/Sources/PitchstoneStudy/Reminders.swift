@@ -5,7 +5,7 @@ public struct PlannedReminder: Sendable, Equatable {
     public enum Kind: String, Sendable {
         /// Ogni mattina alle 8, se ci sono ripassi.
         case morning
-        /// Il primo giorno saltato: subito, o a mezzanotte se oggi non si ripassa.
+        /// Il primo giorno saltato, a mezzanotte.
         case missed
     }
 
@@ -13,8 +13,15 @@ public struct PlannedReminder: Sendable, Equatable {
     public var fireDate: Date
     public var title: String
     public var body: String
+    /// Giorno da oggi, per i promemoria delle 8 (uno per giorno).
+    public var day: Int = 0
 
-    public var identifier: String { "pitchstone.\(kind.rawValue)" }
+    public var identifier: String { kind == .morning ? "pitchstone.morning.\(day)" : "pitchstone.\(kind.rawValue)" }
+
+    /// Tutti gli identificatori possibili, per cancellare i promemoria vecchi.
+    public static var allIdentifiers: [String] {
+        (0...ReminderPlanner.morningDays).map { "pitchstone.morning.\($0)" } + ["pitchstone.missed", "pitchstone.morning"]
+    }
 }
 
 /// Promemoria del ripasso (ARCHITETTURA.md, sezione 2): ogni mattina alle 8 se ci
@@ -28,38 +35,38 @@ public struct ReminderPlanner: Sendable {
         self.plan = plan
     }
 
+    /// Giorni coperti dai promemoria delle 8: se l'app non si apre per qualche giorno
+    /// i promemoria continuano ad arrivare.
+    public static let morningDays = 7
+
     public func reminders(quizzes: [QuizRecord], logs: [ReviewLogRecord], now: Date) -> [PlannedReminder] {
         let calendar = plan.calendar
         var result: [PlannedReminder] = []
         let today = calendar.startOfDay(for: now)
-        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else { return [] }
+        let studiedToday = logs.contains { $0.answeredAt >= today }
 
-        // Prossime 8: oggi se non sono ancora passate, altrimenti domani.
-        let todayAt8 = calendar.date(bySettingHour: Self.morningHour, minute: 0, second: 0, of: today)!
-        let morning = now < todayAt8 ? todayAt8 : calendar.date(bySettingHour: Self.morningHour, minute: 0, second: 0, of: tomorrow)!
-        let dueThen = plan.dueCount(quizzes, on: morning)
-        if dueThen > 0 {
+        // Le prossime mattine alle 8, ognuna con i ripassi di quel giorno. Oggi solo se non
+        // sono ancora passate le 8 e non si è già studiato.
+        for offset in 0...Self.morningDays {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today),
+                  let at8 = calendar.date(bySettingHour: Self.morningHour, minute: 0, second: 0, of: day),
+                  at8 > now, !(offset == 0 && studiedToday) else { continue }
+            let due = plan.dueCount(quizzes, on: at8)
+            guard due > 0 else { continue }
             result.append(PlannedReminder(
-                kind: .morning, fireDate: morning, title: "Ripasso di oggi",
-                body: dueThen == 1 ? "Hai 1 ripasso in scadenza." : "Hai \(dueThen) ripassi in scadenza."))
+                kind: .morning, fireDate: at8, title: "Ripasso di oggi",
+                body: due == 1 ? "Hai 1 ripasso in scadenza." : "Hai \(due) ripassi in scadenza.", day: offset))
         }
 
-        let studiedToday = logs.contains { $0.answeredAt >= today }
-        let studiedYesterday = calendar.date(byAdding: .day, value: -1, to: today).map { yesterday in
-            logs.contains { $0.answeredAt >= yesterday && $0.answeredAt < today }
-        } ?? false
+        // Il primo giorno saltato: a mezzanotte, nel momento in cui lo streak si perde.
+        // Oggi se non si è ancora studiato, altrimenti domani. Una risposta riprogramma tutto,
+        // quindi l'avviso sparisce appena si studia; dopo il primo giorno saltato non ce ne sono altri.
         let streak = plan.streak(logs, now: now)
-        // Ieri c'erano ripassi e non si è studiato: avviso subito (lo streak è già perso).
-        let hadDueYesterday = quizzes.contains { $0.review.phase != .new && $0.review.due < today }
-        if !studiedToday, !studiedYesterday, hadDueYesterday, !logs.isEmpty {
+        if streak > 0, !quizzes.isEmpty,
+           let midnight = calendar.date(byAdding: .day, value: studiedToday ? 2 : 1, to: today) {
             result.append(PlannedReminder(
-                kind: .missed, fireDate: now, title: "Ripasso saltato",
-                body: "Ieri non hai ripassato: riprendi oggi con i quiz in scadenza."))
-        } else if !studiedToday, streak > 0, plan.dueCount(quizzes, on: now) > 0 {
-            // Streak in corso e ripassi di oggi non fatti: avviso a mezzanotte, annullato se si studia.
-            result.append(PlannedReminder(
-                kind: .missed, fireDate: tomorrow, title: "Streak interrotto",
-                body: "Oggi non hai ripassato: lo streak di \(streak) giorni riparte da zero."))
+                kind: .missed, fireDate: midnight, title: "Streak interrotto",
+                body: "Ieri non hai ripassato: lo streak di \(streak) giorni riparte da zero. Riprendi oggi."))
         }
         return result
     }

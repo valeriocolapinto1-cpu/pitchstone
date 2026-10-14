@@ -15,6 +15,9 @@ final class StudyModel {
     private(set) var logs: [ReviewLogRecord] = []
     /// Nodi con domande aperte o di calcolo da generare quando torna la connessione.
     private(set) var queuedGenerations: [UUID] = []
+    /// Livello 1-5 per materia: osservato, così il selettore si aggiorna subito.
+    private(set) var levels: [String: Int] = [:]
+    @ObservationIgnored private var retrying = false
 
     let store: StudyStore
     @ObservationIgnored let notes: NotesModel
@@ -30,6 +33,7 @@ final class StudyModel {
         self.notes = notes
         self.defaults = defaults
         queuedGenerations = (defaults.array(forKey: "quizQueue") as? [String] ?? []).compactMap(UUID.init(uuidString:))
+        levels = defaults.dictionary(forKey: "quizLevels") as? [String: Int] ?? [:]
         goal = StudyGoal(
             targetQuizzes: defaults.object(forKey: "goalQuizzes") as? Int ?? 100,
             targetMinutes: defaults.object(forKey: "goalMinutes") as? Int ?? 120)
@@ -39,6 +43,13 @@ final class StudyModel {
     func reload() {
         quizzes = store.quizzes()
         logs = store.logs()
+        // Quiz di nodi eliminati per sempre: non torneranno, si tolgono con il loro registro.
+        let orphans = Set(quizzes.filter { $0.nodeID != nil && notes.store.node($0.nodeID!) == nil }.map(\.id))
+        if !orphans.isEmpty {
+            store.delete(orphans)
+            quizzes = store.quizzes()
+            logs = store.logs()
+        }
     }
 
     // MARK: Ripasso
@@ -53,6 +64,8 @@ final class StudyModel {
     }
 
     var queue: [QuizRecord] { plan.queue(activeQuizzes, logs: logs, now: now()) }
+    /// Ripassi in anticipo quando non c'è niente da fare: lo streak si tiene anche nei giorni vuoti.
+    var practice: [QuizRecord] { plan.practice(activeQuizzes, now: now()) }
     var streak: Int { plan.streak(logs, now: now()) }
     var dueToday: Int { plan.dueCount(activeQuizzes, on: now()) }
 
@@ -69,8 +82,9 @@ final class StudyModel {
     func answer(_ quiz: QuizRecord, rating: Rating, duration: TimeInterval) {
         let date = now()
         let review = fsrs.review(quiz.review, rating: rating, now: date)
-        store.record(
-            ReviewLogRecord(quizID: quiz.id, rating: rating, answeredAt: date, durationMs: Int(duration * 1000)), review: review)
+        // Un quiz lasciato aperto non gonfia i minuti della settimana: al massimo 5 minuti.
+        let ms = Int(min(duration, 300) * 1000)
+        store.record(ReviewLogRecord(quizID: quiz.id, rating: rating, answeredAt: date, durationMs: ms), review: review)
         reload()
         let ratings = logs.compactMap { log in
             quizzes.first { $0.id == log.quizID }?.subject == quiz.subject ? log.rating : nil
@@ -85,23 +99,22 @@ final class StudyModel {
     // MARK: Livello per materia
 
     func level(for subject: String) -> Int {
-        (defaults.dictionary(forKey: "quizLevels") as? [String: Int])?[subject] ?? 3
+        levels[subject] ?? 3
     }
 
     func setLevel(_ level: Int, for subject: String) {
-        var levels = defaults.dictionary(forKey: "quizLevels") as? [String: Int] ?? [:]
         levels[subject] = min(5, max(1, level))
         defaults.set(levels, forKey: "quizLevels")
     }
 
-    var subjects: [String] { Array(Set(quizzes.map(\.subject))).sorted() }
+    var subjects: [String] { Array(Set(activeQuizzes.map(\.subject))).sorted() }
 
     /// La materia di un appunto: l'esame a cui è collegato, altrimenti l'area.
     func subject(for node: NodeRecord) -> String {
         if node.type == .exam { return node.title }
         let neighbors = notes.edges.filter { $0.deletedAt == nil && ($0.sourceID == node.id || $0.targetID == node.id) }
             .map { $0.sourceID == node.id ? $0.targetID : $0.sourceID }
-        if let exam = neighbors.compactMap { notes.node($0) }.first(where: { $0.type == .exam && $0.deletedAt == nil }) {
+        if let exam = (neighbors.compactMap { notes.node($0) }).first(where: { $0.type == .exam && $0.deletedAt == nil }) {
             return exam.title
         }
         return node.area.name
@@ -117,12 +130,12 @@ final class StudyModel {
     /// Quiz da un appunto. Online con Gemini: risposta multipla, domande aperte e calcoli.
     /// Senza Gemini: solo risposta multipla con il modello locale; aperte e calcoli restano in coda.
     @discardableResult
-    func generate(from nodeID: UUID) async throws -> Int {
+    func generate(from nodeID: UUID, onlineOnly: Bool = false) async throws -> Int {
         guard let node = notes.node(nodeID), node.deletedAt == nil, !notes.isSensitive(nodeID) else {
             throw ChatError.sensitiveContent
         }
         let subject = subject(for: node)
-        let room = QuizGenerator.maxPerSubject - quizzes.filter { $0.subject == subject }.count
+        let room = QuizGenerator.maxPerSubject - activeQuizzes.filter { $0.subject == subject }.count
         guard room > 0 else { throw GenerationError.subjectFull }
         let level = level(for: subject)
         let providers = notes.quizProviders
@@ -138,7 +151,7 @@ final class StudyModel {
                 lastError = error
             }
         }
-        if made.isEmpty, let local = providers.local, await local.isAvailable() {
+        if made.isEmpty, !onlineOnly, let local = providers.local, await local.isAvailable() {
             do {
                 made = try await ask(local, node: node, subject: subject, level: level, kinds: [.mcq])
                 // Le domande aperte e di calcolo arriveranno con Gemini.
@@ -178,13 +191,22 @@ final class StudyModel {
 
     /// Riprova le generazioni in coda (all'avvio e dopo una sync riuscita).
     func retryQueued() async {
-        guard notes.quizProviders.online != nil else { return }
+        guard !retrying, let online = notes.quizProviders.online, await online.isAvailable() else { return }
+        retrying = true
+        defer { retrying = false }
         for id in queuedGenerations {
-            guard notes.node(id)?.deletedAt == nil else {
+            guard let node = notes.node(id), node.deletedAt == nil, !notes.isSensitive(id) else {
                 dequeue(id)
                 continue
             }
-            _ = try? await generate(from: id)
+            do {
+                // Solo Gemini: le domande a risposta multipla del modello locale ci sono già.
+                _ = try await generate(from: id, onlineOnly: true)
+            } catch GenerationError.subjectFull {
+                dequeue(id)
+            } catch {
+                continue
+            }
         }
     }
 
@@ -209,7 +231,7 @@ final class StudyModel {
         guard notificationsEnabled else { return }
         let reminders = ReminderPlanner(plan: plan).reminders(quizzes: activeQuizzes, logs: logs, now: now())
         let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: PlannedReminderKinds.all)
+        center.removePendingNotificationRequests(withIdentifiers: PlannedReminder.allIdentifiers)
         for reminder in reminders {
             let content = UNMutableNotificationContent()
             content.title = reminder.title
@@ -231,8 +253,4 @@ final class StudyModel {
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
         scheduleReminders()
     }
-}
-
-enum PlannedReminderKinds {
-    static let all = ["pitchstone.morning", "pitchstone.missed"]
 }

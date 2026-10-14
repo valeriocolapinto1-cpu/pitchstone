@@ -16,6 +16,11 @@ struct QuizView: View {
                 if started, index < session.count {
                     QuizCard(quiz: session[index], position: index + 1, total: session.count) {
                         index += 1
+                        // I "di nuovo" tornano dopo 10 minuti: alla fine si riprende la coda aggiornata.
+                        if index == session.count, !study.queue.isEmpty {
+                            session = study.queue
+                            index = 0
+                        }
                     }
                     .id(session[index].id)
                 } else {
@@ -54,19 +59,31 @@ struct QuizView: View {
                 Button("Cambia obiettivo") { editingGoal = true }
             }
             Section {
-                if started {
+                if started, study.queue.isEmpty {
                     Label("Sessione finita: a domani!", systemImage: "checkmark.seal")
                 }
-                Button {
-                    session = study.queue
-                    index = 0
-                    started = true
-                } label: {
-                    Label(study.queue.isEmpty ? "Niente da ripassare adesso" : "Inizia il ripasso", systemImage: "play.fill")
-                        .font(.headline)
+                if !study.queue.isEmpty {
+                    Button {
+                        session = study.queue
+                        index = 0
+                        started = true
+                    } label: {
+                        Label("Inizia il ripasso", systemImage: "play.fill").font(.headline)
+                    }
+                    .keyboardShortcut(.defaultAction)
+                } else if !study.practice.isEmpty {
+                    // Niente in scadenza: allenamento in anticipo, che tiene lo streak.
+                    Button {
+                        session = study.practice
+                        index = 0
+                        started = true
+                    } label: {
+                        Label("Allenamento: anticipa i prossimi ripassi", systemImage: "figure.run").font(.headline)
+                    }
+                } else {
+                    Label("Niente da ripassare adesso", systemImage: "play.slash")
+                        .foregroundStyle(.secondary)
                 }
-                .disabled(study.queue.isEmpty)
-                .keyboardShortcut(.defaultAction)
             } footer: {
                 Text("Al massimo \(StudyPlan.dailyLimit) quiz al giorno. Crea quiz da un nodo con il pulsante \"Quiz\".")
             }
