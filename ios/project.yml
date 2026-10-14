@@ -37,6 +37,8 @@ targets:
         product: PitchstoneImport
       - package: PitchstoneKit
         product: PitchstoneAI
+      - package: PitchstoneKit
+        product: PitchstoneStudy
     info:
       path: Pitchstone/Resources/Info.plist
       properties:

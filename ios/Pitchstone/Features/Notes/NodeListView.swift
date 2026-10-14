@@ -185,4 +185,16 @@ extension Area {
         case .salute: "Salute e allenamento"
         }
     }
+
+    /// Lo stesso nome come testo, per i dati (la materia dei quiz).
+    var name: String {
+        switch self {
+        case .studio: String(localized: "Studio")
+        case .progetti: String(localized: "Progetti")
+        case .lavoro: String(localized: "Lavoro e clienti")
+        case .persone: String(localized: "Persone")
+        case .interessi: String(localized: "Interessi")
+        case .salute: String(localized: "Salute e allenamento")
+        }
+    }
 }

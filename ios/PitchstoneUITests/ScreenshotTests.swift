@@ -59,6 +59,18 @@ final class ScreenshotTests: XCTestCase {
             sleep(1)
         }
 
+        // Ripasso (⌘R): riepilogo e un quiz.
+        app.typeKey("r", modifierFlags: .command)
+        let start = app.buttons["Inizia il ripasso"].firstMatch
+        if start.waitForExistence(timeout: 5) {
+            shot("06c-ripasso")
+            start.tap()
+            sleep(1)
+            shot("06d-quiz")
+            app.buttons["Fine"].firstMatch.tap()
+            sleep(1)
+        }
+
         app.buttons["Grafo"].firstMatch.tap()
         // Il layout si calcola in background.
         sleep(4)

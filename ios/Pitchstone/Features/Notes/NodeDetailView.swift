@@ -10,6 +10,9 @@ struct NodeDetailView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openChat) private var openChat
     @Environment(\.openSource) private var openSource
+    @Environment(StudyModel.self) private var study
+    @State private var generatingQuiz = false
+    @State private var quizMessage: String?
     let nodeID: UUID
     let onOpenNode: (String, Area) -> Void
 
@@ -59,6 +62,11 @@ struct NodeDetailView: View {
             }
             .sheet(isPresented: $showingAttachments) {
                 AttachmentsView(nodeID: nodeID)
+            }
+            .alert("Quiz creati", isPresented: Binding(get: { quizMessage != nil }, set: { if !$0 { quizMessage = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(quizMessage ?? "")
             }
             .sheet(item: $analysisResult) { result in
                 AnalysisSheet(nodeID: nodeID, outcome: result.outcome)
@@ -208,6 +216,28 @@ struct NodeDetailView: View {
                 Label("Analizza", systemImage: analyzing ? "hourglass" : "sparkles")
             }
             .disabled(analyzing)
+            Button {
+                save()
+                generatingQuiz = true
+                Task {
+                    defer { generatingQuiz = false }
+                    do {
+                        let count = try await study.generate(from: nodeID)
+                        quizMessage = count == 1
+                            ? String(localized: "1 quiz nuovo nel ripasso.")
+                            : String(localized: "\(count) quiz nuovi nel ripasso.")
+                    } catch StudyModel.GenerationError.subjectFull {
+                        notes.errorMessage = String(localized: "Questa materia ha già 200 quiz.")
+                    } catch ChatError.sensitiveContent {
+                        notes.errorMessage = String(localized: "Dai dati di salute, anche solo sospetti, non si creano quiz.")
+                    } catch {
+                        notes.errorMessage = ChatModel.message(for: error)
+                    }
+                }
+            } label: {
+                Label("Quiz", systemImage: generatingQuiz ? "hourglass" : "questionmark.square.dashed")
+            }
+            .disabled(generatingQuiz)
             Button {
                 save()
                 showingAttachments = true
