@@ -82,6 +82,7 @@ extension NotesModel {
         }
         if let index = notes.firstIndex(where: { $0.0 == "Derivata" }) {
             addDemoDrawing(to: ids[index])
+            addDemoPDF(to: ids[index])
         }
     }
 
@@ -110,5 +111,31 @@ extension NotesModel {
         ], color: .systemRed, width: 3)
         let drawing = PKDrawing(strokes: [axisX, axisY, curve, tangent])
         updateInkPage(page.id) { $0.inkData = InkCodec.data(from: drawing) }
+    }
+
+    /// Una dispensa di tre pagine generata al volo, con un'annotazione a penna sulla prima.
+    private func addDemoPDF(to nodeID: UUID) {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Dispensa derivate.pdf")
+        let page = CGRect(x: 0, y: 0, width: 595, height: 842)
+        let sections = [
+            ("Derivate", "La derivata di f in x₀ è il limite del rapporto incrementale (f(x₀+h) − f(x₀)) / h per h → 0. Geometricamente è la pendenza della retta tangente al grafico nel punto (x₀, f(x₀))."),
+            ("Regole di derivazione", "Linearità: (af + bg)′ = af′ + bg′. Prodotto: (fg)′ = f′g + fg′. Quoziente: (f/g)′ = (f′g − fg′)/g². Composizione: (f∘g)′ = f′(g)·g′."),
+            ("Teoremi", "Rolle, Lagrange e Cauchy. Il teorema di Lagrange afferma che esiste c in (a, b) con f′(c) = (f(b) − f(a))/(b − a)."),
+        ]
+        let data = UIGraphicsPDFRenderer(bounds: page).pdfData { context in
+            for (title, text) in sections {
+                context.beginPage()
+                title.draw(at: CGPoint(x: 56, y: 64), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 26)])
+                text.draw(in: CGRect(x: 56, y: 120, width: 483, height: 600),
+                          withAttributes: [.font: UIFont.systemFont(ofSize: 15)])
+            }
+        }
+        guard (try? data.write(to: url)) != nil, let attachment = try? attach(fileAt: url, to: nodeID) else { return }
+        let underline = PKStroke(ink: PKInk(.pen, color: .systemRed), path: PKStrokePath(controlPoints: (0...20).map { i in
+            PKStrokePoint(location: CGPoint(x: 56 + Double(i) * 12, y: 150), timeOffset: Double(i) * 0.01,
+                          size: CGSize(width: 3, height: 3), opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
+        }, creationDate: Date()))
+        _ = savePDFAnnotation(InkCodec.data(from: PKDrawing(strokes: [underline])), attachment: attachment, page: 0,
+                              layer: nil, loadedFrom: Data())
     }
 }

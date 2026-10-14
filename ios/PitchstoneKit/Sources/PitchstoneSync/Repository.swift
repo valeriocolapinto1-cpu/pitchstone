@@ -50,11 +50,16 @@ public final class Repository {
         node.deviceID = deviceID
 
         if Privacy.isSensitive(node) && !Privacy.isSensitive(old) {
-            if old.version > 0 { throw RepositoryError.syncedNodeCannotBecomeSensitive }
+            // Anche un allegato già caricato nel bucket ha lasciato il dispositivo.
+            let uploaded = store.allAttachments().contains { $0.nodeID == id && $0.isUploaded }
+            if old.version > 0 || uploaded { throw RepositoryError.syncedNodeCannotBecomeSensitive }
             // Mai arrivato al server: basta toglierlo dall'outbox, insieme ai suoi archi.
             store.removePending(.node, id)
             for edge in store.allEdges() where edge.sourceID == id || edge.targetID == id {
                 if edge.version == 0 { store.removePending(.edge, edge.id) }
+            }
+            for attachment in store.allAttachments() where attachment.nodeID == id && attachment.version == 0 {
+                store.removePending(.attachment, attachment.id)
             }
             for page in store.inkPages(of: id) where page.version == 0 {
                 store.removePending(.inkPage, page.id)
@@ -142,17 +147,21 @@ public final class Repository {
 
     // MARK: Disegno
 
-    /// Pagine di disegno del nodo, escluse quelle nel cestino.
+    /// Pagine di disegno del nodo, escluse quelle nel cestino e le annotazioni dei PDF.
     public func inkPages(of nodeID: UUID) -> [InkPageRecord] {
-        store.inkPages(of: nodeID).filter { $0.deletedAt == nil }
+        store.inkPages(of: nodeID).filter { $0.deletedAt == nil && !$0.isPDFAnnotation }
     }
 
+    /// `pdf`: l'allegato e la pagina del PDF, per un'annotazione.
     @discardableResult
-    public func createInkPage(in nodeID: UUID, background: InkBackground = .blank) throws -> InkPageRecord {
+    public func createInkPage(
+        in nodeID: UUID, background: InkBackground = .blank, pdf: (attachment: UUID, page: Int)? = nil
+    ) throws -> InkPageRecord {
         guard store.node(nodeID) != nil else { throw RepositoryError.notFound }
         let date = now()
         let next = (store.inkPages(of: nodeID).map(\.pageNo).max() ?? -1) + 1
         let page = InkPageRecord(nodeID: nodeID, pageNo: next, background: background,
+                                 attachmentID: pdf?.attachment, pdfPage: pdf?.page,
                                  createdAt: date, updatedAt: date, deviceID: deviceID)
         store.saveInkPage(page)
         if Privacy.isSyncable(page, in: store) { enqueue(.inkPage, page.id, version: 0) }
@@ -166,6 +175,8 @@ public final class Repository {
         change(&page)
         page.id = old.id
         page.nodeID = old.nodeID
+        page.attachmentID = old.attachmentID
+        page.pdfPage = old.pdfPage
         page.version = old.version
         page.createdAt = old.createdAt
         page.updatedAt = now()
@@ -185,7 +196,7 @@ public final class Repository {
 
     /// Pagine del nodo nel cestino, la più recente per prima.
     public func trashedInkPages(of nodeID: UUID) -> [InkPageRecord] {
-        store.inkPages(of: nodeID).filter { $0.deletedAt != nil }
+        store.inkPages(of: nodeID).filter { $0.deletedAt != nil && !$0.isPDFAnnotation }
             .sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
     }
 
@@ -200,8 +211,65 @@ public final class Repository {
         if current.inkData == loadedFrom || current.inkData == data {
             return try updateInkPage(id) { $0.inkData = data }
         }
-        let copy = try createInkPage(in: current.nodeID, background: current.background)
+        let copy = try createInkPage(
+            in: current.nodeID, background: current.background,
+            pdf: current.attachmentID.flatMap { id in current.pdfPage.map { (id, $0) } })
         return try updateInkPage(copy.id) { $0.inkData = data }
+    }
+
+    // MARK: Allegati
+
+    /// Registra un allegato il cui file è già sul dispositivo. Le parti partono con la prossima sync.
+    @discardableResult
+    public func createAttachment(
+        id: UUID = UUID(), nodeID: UUID?, kind: AttachmentKind, fileName: String, sizeBytes: Int,
+        sha256: String, pageCount: Int? = nil
+    ) throws -> AttachmentRecord {
+        if let nodeID, store.node(nodeID) == nil { throw RepositoryError.notFound }
+        guard sizeBytes > 0 else { throw AttachmentError.corrupted }
+        guard sizeBytes <= AttachmentParts.maxBytes else { throw AttachmentError.tooLarge }
+        let parts = AttachmentParts.count(forSize: sizeBytes)
+        let date = now()
+        let attachment = AttachmentRecord(
+            id: id, nodeID: nodeID, kind: kind, fileName: fileName, sizeBytes: sizeBytes, pageCount: pageCount,
+            sha256: sha256, partCount: parts, createdAt: date, updatedAt: date, deviceID: deviceID)
+        store.saveAttachment(attachment)
+        if Privacy.isSyncable(attachment, in: store) { enqueue(.attachment, id, version: 0) }
+        return attachment
+    }
+
+    /// Nome, nodo e cestino; il contenuto di un allegato non cambia.
+    @discardableResult
+    public func updateAttachment(_ id: UUID, _ change: (inout AttachmentRecord) -> Void) throws -> AttachmentRecord {
+        guard let old = store.attachment(id) else { throw RepositoryError.notFound }
+        var attachment = old
+        change(&attachment)
+        attachment.id = old.id
+        // Il nodo non cambia: le annotazioni e la privacy seguono il nodo di partenza.
+        attachment.nodeID = old.nodeID
+        attachment.kind = old.kind
+        attachment.sizeBytes = old.sizeBytes
+        attachment.sha256 = old.sha256
+        attachment.partCount = old.partCount
+        attachment.isUploaded = old.isUploaded
+        attachment.version = old.version
+        attachment.createdAt = old.createdAt
+        attachment.updatedAt = now()
+        attachment.deviceID = deviceID
+        store.saveAttachment(attachment)
+        if Privacy.isSyncable(attachment, in: store) { enqueue(.attachment, id, version: old.version) }
+        return attachment
+    }
+
+    /// Allegati del nodo, esclusi quelli nel cestino.
+    public func attachments(of nodeID: UUID) -> [AttachmentRecord] {
+        store.allAttachments().filter { $0.nodeID == nodeID && $0.deletedAt == nil }
+    }
+
+    /// Strati di annotazione di una pagina del PDF (più di uno dopo un conflitto).
+    public func pdfAnnotations(of attachmentID: UUID, page: Int) -> [InkPageRecord] {
+        guard let nodeID = store.attachment(attachmentID)?.nodeID else { return [] }
+        return store.inkPages(of: nodeID).filter { $0.attachmentID == attachmentID && $0.pdfPage == page && $0.deletedAt == nil }
     }
 
     // MARK: Cestino
@@ -212,10 +280,18 @@ public final class Repository {
 
     /// Elimina definitivamente ciò che è nel cestino da più di 30 giorni,
     /// con gli archi collegati. Il server fa lo stesso per i dati sincronizzati.
+    /// `removeFile` cancella il file locale di ogni allegato eliminato.
     @discardableResult
-    public func purgeTrash() -> Int {
+    public func purgeTrash(removeFile: (UUID) -> Void = { _ in }) -> Int {
         let cutoff = now().addingTimeInterval(-Self.trashRetention)
         let expired = Set(store.allNodes().filter { ($0.deletedAt ?? .distantFuture) < cutoff }.map(\.id))
+        for attachment in store.allAttachments()
+        where (attachment.deletedAt ?? .distantFuture) < cutoff || attachment.nodeID.map(expired.contains) == true {
+            store.removePending(.attachment, attachment.id)
+            for page in store.allInkPages() where page.attachmentID == attachment.id { store.removePending(.inkPage, page.id) }
+            store.deleteAttachment(attachment.id)
+            removeFile(attachment.id)
+        }
         for edge in store.allEdges()
         where (edge.deletedAt ?? .distantFuture) < cutoff || expired.contains(edge.sourceID) || expired.contains(edge.targetID) {
             store.removePending(.edge, edge.id)

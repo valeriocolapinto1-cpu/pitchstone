@@ -7,6 +7,37 @@ import FoundationNetworking
 
 @Suite("Formato di rete")
 struct WireTests {
+    @Test("allegati: righe del database e annotazioni di un PDF")
+    func attachments() throws {
+        let json = """
+        {"changes":[
+          {"entity":"attachment","data":{"id":"30000000-0000-4000-8000-0000000000a1","node_id":null,"kind":"pdf",
+            "storage_path":"30000000-0000-4000-8000-0000000000a1","size_bytes":104857600,"page_count":null,
+            "sha256":"\(String(repeating: "ab", count: 32))","file_name":"Analisi.pdf","part_count":3,"version":2,
+            "created_at":"2026-10-14T09:00:00.123456+00:00","updated_at":"2026-10-14T09:00:01+00:00","deleted_at":null,
+            "device_id":"ipad-a","server_seq":42}},
+          {"entity":"ink_page","data":{"id":"30000000-0000-4000-8000-000000000101","node_id":"30000000-0000-4000-8000-000000000001",
+            "page_no":0,"background":"blank","ink_data":"AAE=","attachment_id":"30000000-0000-4000-8000-0000000000a1","pdf_page":4,
+            "version":1,"created_at":"2026-10-14T09:00:00+00:00","updated_at":"2026-10-14T09:00:00+00:00","deleted_at":null,
+            "device_id":"ipad-a","server_seq":43}}
+        ],"cursor":43,"has_more":false}
+        """
+        let response = try WireCoding.decoder().decode(PullResponse.self, from: Data(json.utf8))
+        guard case .attachment(let attachment) = response.changes[0], case .inkPage(let layer) = response.changes[1] else {
+            Issue.record("entità non riconosciute")
+            return
+        }
+        #expect(attachment.sizeBytes == 104_857_600)
+        #expect(attachment.partCount == 3)
+        #expect(attachment.isUploaded, "una riga del server ha già le parti nel bucket")
+        #expect(layer.pdfPage == 4)
+        #expect(layer.attachmentID == attachment.id)
+
+        let encoded = try JSONSerialization.jsonObject(with: try WireCoding.encoder().encode(attachment)) as? [String: Any]
+        #expect(encoded?["storage_path"] as? String == "30000000-0000-4000-8000-0000000000a1")
+        #expect(encoded?["is_uploaded"] == nil && encoded?["isUploaded"] == nil, "lo stato del caricamento resta locale")
+    }
+
     @Test("date di Postgres con microsecondi e fuso orario")
     func parsesPostgresDates() throws {
         let base = try #require(WireCoding.parseDate("2026-10-13T12:00:00Z"))

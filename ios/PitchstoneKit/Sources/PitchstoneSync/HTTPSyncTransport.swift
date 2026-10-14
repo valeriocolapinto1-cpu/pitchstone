@@ -22,7 +22,7 @@ public struct HTTPError: Error, Equatable {
 public struct HTTPSyncTransport: SyncTransport {
     public var baseURL: URL
     public var credentials: AccessCredentials
-    private let session: URLSession
+    let session: URLSession
 
     public init(baseURL: URL, credentials: AccessCredentials, session: URLSession = .shared) {
         self.baseURL = baseURL

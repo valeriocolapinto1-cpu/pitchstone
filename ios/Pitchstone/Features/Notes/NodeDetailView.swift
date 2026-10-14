@@ -21,6 +21,7 @@ struct NodeDetailView: View {
     @State private var tags = ""
     @State private var mode: Mode
     @State private var showingHistory = false
+    @State private var showingAttachments = false
     /// Ultimo stato salvato o caricato: si salva solo ciò che l'utente ha cambiato
     /// rispetto a qui, e si ricarica dall'archivio solo se non ci sono modifiche in sospeso.
     @State private var baseline: Draft?
@@ -45,6 +46,9 @@ struct NodeDetailView: View {
             .toolbar { toolbar }
             .sheet(isPresented: $showingHistory) {
                 HistoryView(nodeID: nodeID)
+            }
+            .sheet(isPresented: $showingAttachments) {
+                AttachmentsView(nodeID: nodeID)
             }
             .onAppear(perform: load)
             .onDisappear {
@@ -164,6 +168,13 @@ struct NodeDetailView: View {
             .frame(maxWidth: 420)
         }
         ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                save()
+                showingAttachments = true
+            } label: {
+                let count = notes.attachments(of: nodeID).count
+                Label(count > 0 ? "Allegati (\(count))" : "Allegati", systemImage: count > 0 ? "paperclip.circle.fill" : "paperclip")
+            }
             Button {
                 save()
                 showingHistory = true

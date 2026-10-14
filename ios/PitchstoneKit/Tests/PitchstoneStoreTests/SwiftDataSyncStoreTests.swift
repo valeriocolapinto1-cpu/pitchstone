@@ -83,5 +83,30 @@ struct SwiftDataSyncStoreTests {
         #expect(store.allEdges().count == 449)
         #expect(store.pendingChanges().count == 899)
     }
+
+    @Test("allegati e annotazioni dei PDF")
+    func attachments() throws {
+        let date = Date()
+        let node = NodeRecord(type: .concept, title: "Dispensa", area: .studio, createdAt: date, updatedAt: date, deviceID: "a")
+        store.saveNode(node)
+        var attachment = AttachmentRecord(nodeID: node.id, kind: .pdf, fileName: "Analisi.pdf", sizeBytes: 10, pageCount: 2,
+                                          sha256: String(repeating: "a", count: 64), partCount: 1, createdAt: date,
+                                          updatedAt: date, deviceID: "a")
+        store.saveAttachment(attachment)
+        attachment.isUploaded = true
+        store.saveAttachment(attachment)
+        #expect(store.attachment(attachment.id) == attachment)
+        #expect(store.allAttachments() == [attachment])
+
+        let layer = InkPageRecord(nodeID: node.id, pageNo: 0, inkData: Data([1]), attachmentID: attachment.id, pdfPage: 1,
+                                  createdAt: date, updatedAt: date, deviceID: "a")
+        let page = InkPageRecord(nodeID: node.id, pageNo: 1, createdAt: date, updatedAt: date, deviceID: "a")
+        store.saveInkPage(layer)
+        store.saveInkPage(page)
+        #expect(store.inkPage(layer.id)?.pdfPage == 1)
+        store.deleteAttachment(attachment.id)
+        #expect(store.attachment(attachment.id) == nil)
+        #expect(store.allInkPages().map(\.id) == [page.id], "le annotazioni seguono l'allegato")
+    }
 }
 #endif

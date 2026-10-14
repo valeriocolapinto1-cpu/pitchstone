@@ -17,5 +17,9 @@ SUPABASE_URL = ""
 ACCESS_TEAM_DOMAIN = ""
 ACCESS_AUD = ""
 
+# Pulizia dei file degli allegati eliminati, dopo purge_trash (03:00 UTC).
+[triggers]
+crons = ["30 4 * * *"]
+
 # Secret: wrangler secret put GEMINI_API_KEY
 #         wrangler secret put SUPABASE_SECRET_KEY

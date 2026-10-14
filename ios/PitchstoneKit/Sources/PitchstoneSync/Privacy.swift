@@ -20,4 +20,12 @@ public enum Privacy {
         guard let node = store.node(page.nodeID) else { return false }
         return !isSensitive(node)
     }
+
+    /// Un allegato segue il suo nodo; senza nodo può andare al server.
+    @MainActor
+    public static func isSyncable(_ attachment: AttachmentRecord, in store: SyncStore) -> Bool {
+        guard let nodeID = attachment.nodeID else { return true }
+        guard let node = store.node(nodeID) else { return false }
+        return !isSensitive(node)
+    }
 }
