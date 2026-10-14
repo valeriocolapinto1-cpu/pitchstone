@@ -38,6 +38,8 @@ let package = Package(
             name: "PitchstoneImportTests", dependencies: ["PitchstoneImport", "PitchstoneSync"],
             resources: [.copy("VaultDiEsempio")]),
         .testTarget(name: "PitchstoneAITests", dependencies: ["PitchstoneAI", "PitchstoneSync", "PitchstoneNotes"]),
-        .testTarget(name: "PitchstoneStudyTests", dependencies: ["PitchstoneStudy", "PitchstoneAI", "PitchstoneSync"]),
+        .testTarget(
+            name: "PitchstoneStudyTests",
+            dependencies: ["PitchstoneStudy", "PitchstoneAI", "PitchstoneSync", "PitchstoneImport", "PitchstoneNotes"]),
     ]
 )

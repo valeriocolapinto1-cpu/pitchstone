@@ -21,7 +21,7 @@ export function validateSign(body: unknown): { action: SignAction; path: string 
   return { action, path };
 }
 
-function headers(config: SupabaseConfig): Record<string, string> {
+export function headers(config: SupabaseConfig): Record<string, string> {
   const result: Record<string, string> = { apikey: config.secretKey, "content-type": "application/json" };
   // Le chiavi legacy (JWT) vanno anche in Authorization; le nuove sb_secret_ no.
   if (config.secretKey.startsWith("eyJ")) result.authorization = `Bearer ${config.secretKey}`;

@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import PitchstoneGraph
+import PitchstoneStudy
 import PitchstoneSync
 
 /// Stato del grafo che sopravvive al passaggio elenco ↔ grafo: scena, posizioni,
@@ -33,10 +34,13 @@ final class GraphState {
         cachedRevision = notes.revision
         // Il testo di PDF, foto e scrittura a mano è ricercabile anche nel grafo.
         let extracted = notes.extractedTextByNode()
-        let nodes = extracted.isEmpty ? notes.nodes : notes.nodes.map { node in
-            guard let text = extracted[node.id] else { return node }
+        let nodes = notes.nodes.map { node in
             var copy = node
-            copy.bodyMD += "\n" + text
+            if let text = extracted[node.id] { copy.bodyMD += "\n" + text }
+            // Gli esami mostrano la data nel grafo.
+            if node.type == .exam, let day = ExamInfo.parse(node.tags).date, let d = day.day, let m = day.month {
+                copy.title += " · \(d)/\(m)"
+            }
             return copy
         }
         graph = GraphData(nodes: nodes, edges: notes.edges)

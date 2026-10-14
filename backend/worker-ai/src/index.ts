@@ -1,4 +1,5 @@
 import { verifyAccessJwt } from "./access";
+import { dailyBackup } from "./backup";
 import { chat, DEFAULT_MODEL, validateChat } from "./chat";
 import { emptyStorageTrash, signUrl, validateSign } from "./storage";
 import { BadRequest, MAX_BODY_BYTES, rpc, validatePull, validatePush } from "./sync";
@@ -78,9 +79,11 @@ export default {
     }
   },
 
-  // Ogni giorno, dopo la pulizia del cestino nel database (03:00 UTC): file degli allegati eliminati.
+  // Ogni giorno, dopo la pulizia del cestino nel database (03:00 UTC): file degli allegati
+  // eliminati, poi il backup giornaliero.
   async scheduled(_controller, env, ctx): Promise<void> {
     if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) return;
-    ctx.waitUntil(emptyStorageTrash({ url: env.SUPABASE_URL, secretKey: env.SUPABASE_SECRET_KEY }));
+    const supabase = { url: env.SUPABASE_URL, secretKey: env.SUPABASE_SECRET_KEY };
+    ctx.waitUntil(emptyStorageTrash(supabase).then(() => dailyBackup(supabase)));
   },
 } satisfies ExportedHandler<Env>;
