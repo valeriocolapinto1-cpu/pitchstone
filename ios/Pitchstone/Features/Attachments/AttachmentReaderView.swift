@@ -169,13 +169,16 @@ private struct PDFReader: UIViewRepresentable {
             for layer in layers {
                 if let other = try? InkCodec.drawing(from: layer.inkData) { drawing.append(other) }
             }
-            var layerID = layers.first?.id
+            let layerID = layers.first?.id
             var loaded = layers.first?.inkData ?? Data()
             // Più strati (dopo un conflitto): si uniscono nel primo, nessun tratto si perde.
+            // Fuori dal ciclo di disegno di PDFKit; se l'unione fallisse, il salvataggio
+            // successivo vedrebbe lo strato diverso e userebbe uno strato nuovo.
             if layers.count > 1 {
                 let merged = InkCodec.data(from: drawing)
-                layerID = notes.mergePDFLayers(layers, into: merged)
                 loaded = merged
+                let notes = notes
+                DispatchQueue.main.async { _ = notes.mergePDFLayers(layers, into: merged) }
             }
             let canvas = PKCanvasView()
             canvas.backgroundColor = .clear

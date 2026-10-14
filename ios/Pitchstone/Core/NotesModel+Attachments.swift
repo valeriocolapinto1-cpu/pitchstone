@@ -16,6 +16,16 @@ enum AttachmentImportError: LocalizedError {
     }
 }
 
+extension AttachmentError: @retroactive LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .missingLocalFile: String(localized: "Il file non è su questo dispositivo.")
+        case .corrupted: String(localized: "Il file è vuoto o rovinato.")
+        case .tooLarge: String(localized: "Il file supera i 500 MB.")
+        }
+    }
+}
+
 /// Allegati (ADR 0007): il file sta nell'archivio dell'app; con la sync configurata
 /// va anche nel bucket privato, diviso in parti.
 extension NotesModel {

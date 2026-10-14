@@ -50,7 +50,9 @@ public final class Repository {
         node.deviceID = deviceID
 
         if Privacy.isSensitive(node) && !Privacy.isSensitive(old) {
-            if old.version > 0 { throw RepositoryError.syncedNodeCannotBecomeSensitive }
+            // Anche un allegato già caricato nel bucket ha lasciato il dispositivo.
+            let uploaded = store.allAttachments().contains { $0.nodeID == id && $0.isUploaded }
+            if old.version > 0 || uploaded { throw RepositoryError.syncedNodeCannotBecomeSensitive }
             // Mai arrivato al server: basta toglierlo dall'outbox, insieme ai suoi archi.
             store.removePending(.node, id)
             for edge in store.allEdges() where edge.sourceID == id || edge.targetID == id {
@@ -224,8 +226,9 @@ public final class Repository {
         sha256: String, pageCount: Int? = nil
     ) throws -> AttachmentRecord {
         if let nodeID, store.node(nodeID) == nil { throw RepositoryError.notFound }
+        guard sizeBytes > 0 else { throw AttachmentError.corrupted }
+        guard sizeBytes <= AttachmentParts.maxBytes else { throw AttachmentError.tooLarge }
         let parts = AttachmentParts.count(forSize: sizeBytes)
-        guard parts <= AttachmentParts.maxParts else { throw AttachmentError.tooLarge }
         let date = now()
         let attachment = AttachmentRecord(
             id: id, nodeID: nodeID, kind: kind, fileName: fileName, sizeBytes: sizeBytes, pageCount: pageCount,
@@ -242,6 +245,8 @@ public final class Repository {
         var attachment = old
         change(&attachment)
         attachment.id = old.id
+        // Il nodo non cambia: le annotazioni e la privacy seguono il nodo di partenza.
+        attachment.nodeID = old.nodeID
         attachment.kind = old.kind
         attachment.sizeBytes = old.sizeBytes
         attachment.sha256 = old.sha256

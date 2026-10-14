@@ -14,7 +14,8 @@ alter table attachments
   add column device_id text not null,
   add column server_seq bigint not null,
   add constraint attachments_sha256 check (sha256 ~ '^[0-9a-f]{64}$'),
-  add constraint attachments_size check (size_bytes between 1 and 2000000000),
+  -- Stesso limite del client (AttachmentParts.maxBytes): con 1 GB di spazio non serve di più.
+  add constraint attachments_size check (size_bytes between 1 and 500000000),
   -- Il percorso nel bucket è l'id: nessun client può puntare ai file di un altro allegato.
   add constraint attachments_path check (storage_path = id::text);
 
@@ -66,8 +67,9 @@ begin
 end;
 $$;
 
--- Un allegato non cambia: si possono cambiare solo nodo, nome e cestino.
--- In un conflitto vale l'ultima modifica, e un ripristino vince su un'eliminazione.
+-- Un allegato non cambia: si possono cambiare solo nome e cestino. Il nodo resta quello
+-- di partenza (annotazioni e privacy lo seguono). In un conflitto vale l'ultima modifica,
+-- e un ripristino vince su un'eliminazione.
 create function sync_apply_attachment(p_device text, p_base integer, d jsonb)
 returns jsonb language plpgsql set search_path = '' as $$
 declare
@@ -78,7 +80,11 @@ declare
 begin
   select * into cur from public.attachments where id = (d->>'id')::uuid for update;
 
-  if not found then
+  if not found and p_base is not null then
+    -- Il client lo conosceva già: nel frattempo è stato eliminato definitivamente e i
+    -- suoi file sono andati. Non si fa risorgere una riga senza file.
+    raise exception 'allegato eliminato definitivamente' using errcode = 'P0002';
+  elsif not found then
     insert into public.attachments (id, node_id, kind, storage_path, size_bytes, page_count, sha256, file_name,
                                     part_count, version, created_at, deleted_at, device_id)
     values ((d->>'id')::uuid, (d->>'node_id')::uuid, d->>'kind', d->>'storage_path', (d->>'size_bytes')::bigint,
@@ -92,7 +98,6 @@ begin
       raise exception 'il contenuto di un allegato non cambia' using errcode = '22023';
     end if;
     update public.attachments set
-      node_id = (d->>'node_id')::uuid,
       file_name = coalesce(d->>'file_name', cur.file_name),
       page_count = coalesce((d->>'page_count')::integer, cur.page_count),
       deleted_at = case
@@ -318,6 +323,15 @@ begin
 end;
 $$;
 
+-- Si può caricare una parte solo per un allegato che non ha ancora la sua riga:
+-- dopo, il contenuto non cambia e nessuno può sovrascriverlo.
+create function attachment_upload_allowed(p_id uuid)
+returns boolean language sql stable set search_path = '' as $$
+  select not exists (select 1 from public.attachments where id = p_id)
+     and not exists (select 1 from public.purged where entity = 'attachment' and id = p_id)
+     and not exists (select 1 from public.storage_trash where path = p_id::text);
+$$;
+
 -- Coda dei file da cancellare: il Worker legge, cancella dal bucket, conferma.
 create function storage_trash_list(p_limit integer default 100)
 returns jsonb language sql stable set search_path = '' as $$
@@ -332,5 +346,6 @@ returns integer language sql set search_path = '' as $$
 $$;
 
 revoke execute on function sync_apply_attachment(text, integer, jsonb), storage_trash_list(integer),
-  storage_trash_done(text[]) from public, anon, authenticated;
-grant execute on function storage_trash_list(integer), storage_trash_done(text[]) to service_role;
+  storage_trash_done(text[]), attachment_upload_allowed(uuid) from public, anon, authenticated;
+grant execute on function storage_trash_list(integer), storage_trash_done(text[]), attachment_upload_allowed(uuid)
+  to service_role;

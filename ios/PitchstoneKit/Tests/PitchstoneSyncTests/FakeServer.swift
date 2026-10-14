@@ -22,6 +22,8 @@ final class FakeServer: @unchecked Sendable {
     /// Push ricevuti, per verificare i lotti.
     private(set) var pushSizes: [Int] = []
     private var purged: [(Entity, UUID, Int64)] = []
+    /// Simula un nodo rifiutato dal server (per esempio un vincolo violato).
+    var rejectNodes = false
 
     func node(_ id: UUID) -> NodeRecord? { lock.withLock { nodes[id]?.0 } }
     func inkPages(of nodeID: UUID) -> [InkPageRecord] {
@@ -50,7 +52,7 @@ final class FakeServer: @unchecked Sendable {
     }
 
     private func applyNode(_ n: NodeRecord, base: Int?, device: String) -> PushResult {
-        if n.type == .health || n.area == .salute {
+        if n.type == .health || n.area == .salute || rejectNodes {
             return PushResult(entity: .node, id: n.id, status: .rejected, error: "23514")
         }
         var result = n
@@ -154,8 +156,13 @@ final class FakeServer: @unchecked Sendable {
         if let nodeID = a.nodeID, nodes[nodeID] == nil {
             return PushResult(entity: .attachment, id: a.id, status: .rejected, error: "23503")
         }
+        if attachments[a.id] == nil, base != nil {
+            // Eliminato definitivamente nel frattempo: non risorge.
+            return PushResult(entity: .attachment, id: a.id, status: .rejected, error: "P0002")
+        }
         var result = a
         result.deviceID = device
+        result.nodeID = attachments[a.id]?.0.nodeID ?? a.nodeID
         let status: PushResult.Status
         if let cur = attachments[a.id]?.0 {
             guard cur.sha256 == a.sha256, cur.sizeBytes == a.sizeBytes, cur.partCount == a.partCount else {
@@ -174,6 +181,14 @@ final class FakeServer: @unchecked Sendable {
     }
 
     func attachment(_ id: UUID) -> AttachmentRecord? { lock.withLock { attachments[id]?.0 } }
+
+    /// Come attachment_upload_allowed: niente caricamenti dopo la riga.
+    func uploadAllowed(_ path: String) -> Bool {
+        lock.withLock {
+            let id = path.split(separator: "/").first.flatMap { UUID(uuidString: String($0)) }
+            return id.map { attachments[$0] == nil && !purged.contains(where: { $0.0 == .attachment && $0.1 == id }) } ?? false
+        }
+    }
 
     func store(_ data: Data, at path: String) throws {
         try lock.withLock {
@@ -282,6 +297,7 @@ final class FakeTransport: SyncTransport, StorageTransport, @unchecked Sendable 
     // URL "firmati" finti: fake://upload/<percorso>.
     func signedURL(upload: Bool, path: String) async throws -> URL {
         guard online else { throw URLError(.notConnectedToInternet) }
+        if upload, !server.uploadAllowed(path) { throw HTTPError(status: 409) }
         return URL(string: "fake://\(upload ? "upload" : "download")/\(path)")!
     }
 

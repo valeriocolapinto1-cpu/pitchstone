@@ -7,19 +7,23 @@ import FoundationNetworking
 public enum AttachmentParts {
     /// 45 MiB: margine sotto i 50 MB del piano gratuito.
     public static let partSize = 45 * 1024 * 1024
-    /// Limite del database: 100 parti, cioè circa 4,4 GB.
+    /// Limite del database: 100 parti.
     public static let maxParts = 100
+    /// Un allegato più grande non ha senso con 1 GB di spazio (stesso limite nel database).
+    public static let maxBytes = 500_000_000
 
     public static func count(forSize size: Int, partSize: Int = partSize) -> Int {
         max(1, (size + partSize - 1) / partSize)
     }
 
-    /// Parti di un file in ordine. Le sottosequenze di un `Data` mappato in memoria non copiano i byte.
+    /// Intervalli delle parti di un file di `size` byte, in ordine.
+    public static func ranges(forSize size: Int, partSize: Int = partSize) -> [Range<Int>] {
+        stride(from: 0, to: size, by: partSize).map { $0..<min($0 + partSize, size) }
+    }
+
+    /// Parti di un file in ordine (copie: per i file grandi meglio `ranges` e una parte alla volta).
     public static func split(_ data: Data, partSize: Int = partSize) -> [Data] {
-        guard !data.isEmpty else { return [] }
-        return stride(from: 0, to: data.count, by: partSize).map { start in
-            data.subdata(in: (data.startIndex + start)..<(data.startIndex + min(start + partSize, data.count)))
-        }
+        ranges(forSize: data.count, partSize: partSize).map { data.subdata(in: (data.startIndex + $0.lowerBound)..<(data.startIndex + $0.upperBound)) }
     }
 
     /// Percorso di una parte nel bucket: `<id>/part-007`.
@@ -79,10 +83,15 @@ public struct AttachmentTransfer: Sendable {
     /// Carica tutte le parti del file locale. Ripetibile: le parti già presenti si sovrascrivono.
     public func upload(_ attachment: AttachmentRecord) async throws {
         guard files.exists(attachment.id) else { throw AttachmentError.missingLocalFile }
-        let parts = AttachmentParts.split(try files.read(attachment.id))
-        guard parts.count == attachment.partCount else { throw AttachmentError.corrupted }
-        for (index, part) in parts.enumerated() {
+        // Il file è mappato in memoria: si copia una parte alla volta, non tutto il file.
+        let data = try files.read(attachment.id)
+        let ranges = AttachmentParts.ranges(forSize: data.count)
+        guard !ranges.isEmpty, ranges.count == attachment.partCount, data.count == attachment.sizeBytes else {
+            throw AttachmentError.corrupted
+        }
+        for (index, range) in ranges.enumerated() {
             let url = try await transport.signedURL(upload: true, path: AttachmentParts.path(of: attachment, part: index))
+            let part = data.subdata(in: (data.startIndex + range.lowerBound)..<(data.startIndex + range.upperBound))
             try await transport.put(part, to: url)
         }
     }
