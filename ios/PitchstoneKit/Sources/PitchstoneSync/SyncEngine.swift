@@ -33,6 +33,8 @@ public final class SyncEngine {
     private let store: SyncStore
     private let transport: SyncTransport
     private let deviceID: String
+    /// Trasferimento dei file degli allegati; senza, gli allegati restano solo locali.
+    private let attachments: AttachmentTransfer?
     private var running = false
 
     /// Modifiche rifiutate dal server e ancora in outbox, in attesa di correzione.
@@ -42,10 +44,11 @@ public final class SyncEngine {
         }
     }
 
-    public init(store: SyncStore, transport: SyncTransport, deviceID: String) {
+    public init(store: SyncStore, transport: SyncTransport, deviceID: String, attachments: AttachmentTransfer? = nil) {
         self.store = store
         self.transport = transport
         self.deviceID = deviceID
+        self.attachments = attachments
     }
 
     @discardableResult
@@ -54,11 +57,39 @@ public final class SyncEngine {
         running = true
         defer { running = false }
         do {
+            await uploadAttachments()
             let pushed = try await pushAll()
             let pulled = try await pullAll()
             return .synced(pushed: pushed, pulled: pulled)
         } catch {
             return .failed(String(describing: error))
+        }
+    }
+
+    // MARK: Allegati
+
+    /// Prima i file, poi la riga: un altro dispositivo non vede mai un allegato
+    /// senza le sue parti nel bucket. Un errore di rete rimanda alla sync successiva;
+    /// un file mancante o rovinato parcheggia l'allegato senza bloccare gli altri.
+    private func uploadAttachments() async {
+        guard let attachments else { return }
+        for record in store.allAttachments()
+        where !record.isUploaded && record.deletedAt == nil && Privacy.isSyncable(record, in: store) {
+            guard store.pendingChange(.attachment, record.id)?.rejection == nil else { continue }
+            do {
+                try await attachments.upload(record)
+            } catch let error as AttachmentError {
+                if var pending = store.pendingChange(.attachment, record.id) {
+                    pending.rejection = error == .missingLocalFile ? "file non presente sul dispositivo" : "file non valido"
+                    store.savePending(pending)
+                }
+                continue
+            } catch {
+                continue
+            }
+            guard var current = store.attachment(record.id) else { continue }
+            current.isUploaded = true
+            store.saveAttachment(current)
         }
     }
 
@@ -103,6 +134,14 @@ public final class SyncEngine {
         for pending in store.pendingChanges()
         where pending.rejection == nil && !sent.contains(Key(entity: pending.entity, id: pending.id)) {
             if batch.count == Self.batchSize { break }
+            // Un allegato parte solo quando le sue parti sono nel bucket. Uno mai caricato
+            // e già nel cestino non deve arrivare al server: la voce lascia l'outbox.
+            if pending.entity == .attachment, let record = store.attachment(pending.id), !record.isUploaded {
+                if record.deletedAt != nil, record.version == 0 {
+                    store.removePending(.attachment, record.id)
+                }
+                continue
+            }
             guard let change = outgoing(for: pending) else { continue }
             // Una voce che da sola supera il limite non passerebbe mai dal Worker:
             // resta in outbox come rifiutata invece di bloccare tutta la sync.
@@ -117,7 +156,7 @@ public final class SyncEngine {
             if bytes > Self.maxBatchBytes, !batch.isEmpty { break }
             batch.append(Snapshot(pending: pending, change: change))
         }
-        let order: [Entity: Int] = [.node: 0, .edge: 1, .inkPage: 2]
+        let order: [Entity: Int] = [.node: 0, .attachment: 1, .edge: 2, .inkPage: 3]
         return batch.enumerated()
             .sorted { (order[$0.element.pending.entity]!, $0.offset) < (order[$1.element.pending.entity]!, $1.offset) }
             .map(\.element)
@@ -129,6 +168,7 @@ public final class SyncEngine {
         case .node: store.node(pending.id).flatMap { Privacy.isSensitive($0) ? nil : .node($0) }
         case .edge: store.edge(pending.id).flatMap { Privacy.isSyncable($0, in: store) ? .edge($0) : nil }
         case .inkPage: store.inkPage(pending.id).flatMap { Privacy.isSyncable($0, in: store) ? .inkPage($0) : nil }
+        case .attachment: store.attachment(pending.id).flatMap { Privacy.isSyncable($0, in: store) ? .attachment($0) : nil }
         }
         guard let payload else {
             store.removePending(pending.entity, pending.id)
@@ -152,7 +192,8 @@ public final class SyncEngine {
             }
             return
         }
-        let serverVersion = result.node?.version ?? result.edge?.version ?? result.inkPage?.version ?? 0
+        let serverVersion = result.node?.version ?? result.edge?.version ?? result.inkPage?.version
+            ?? result.attachment?.version ?? 0
         guard current.revision == snapshot.pending.revision else {
             // Modificato di nuovo durante il push: il contenuto locale resta in outbox.
             // Dopo un merge si riparte dalla versione vecchia, così il server unisce di nuovo
@@ -172,6 +213,10 @@ public final class SyncEngine {
         // In un conflitto sul disegno la pagina del server resta com'è: i tratti locali
         // arrivano con il pull come nuova pagina (copy_id).
         if let page = result.inkPage { store.saveInkPage(page) }
+        if let attachment = result.attachment {
+            store.saveAttachment(attachment)
+            retryDependents(ofAttachment: attachment.id)
+        }
         store.removePending(entity, id)
     }
 
@@ -181,9 +226,19 @@ public final class SyncEngine {
             let dependent: Bool = switch pending.entity {
             case .edge: store.edge(pending.id).map { $0.sourceID == nodeID || $0.targetID == nodeID } ?? false
             case .inkPage: store.inkPage(pending.id)?.nodeID == nodeID
+            case .attachment: store.attachment(pending.id)?.nodeID == nodeID
             case .node: false
             }
             guard dependent else { continue }
+            pending.rejection = nil
+            store.savePending(pending)
+        }
+    }
+
+    /// Le annotazioni di un PDF ripartono quando arriva il suo allegato.
+    private func retryDependents(ofAttachment attachmentID: UUID) {
+        for var pending in store.pendingChanges() where pending.rejection != nil && pending.entity == .inkPage {
+            guard store.inkPage(pending.id)?.attachmentID == attachmentID else { continue }
             pending.rejection = nil
             store.savePending(pending)
         }
@@ -220,6 +275,10 @@ public final class SyncEngine {
             guard store.pendingChange(.inkPage, page.id) == nil else { return }
             if let local = store.inkPage(page.id), local.version > page.version { return }
             store.saveInkPage(page)
+        case .attachment(let attachment):
+            guard store.pendingChange(.attachment, attachment.id) == nil else { return }
+            if let local = store.attachment(attachment.id), local.version > attachment.version { return }
+            store.saveAttachment(attachment)
         case .nodeVersion(let version):
             // Lo storico può arrivare prima del suo nodo: il nodo ha un server_seq più recente.
             store.saveVersion(version)
@@ -233,14 +292,25 @@ public final class SyncEngine {
                     store.deleteEdge(edge.id)
                 }
                 for page in store.inkPages(of: id) { store.removePending(.inkPage, page.id) }
+                for attachment in store.allAttachments() where attachment.nodeID == id { removeAttachment(attachment.id) }
                 store.deleteNode(id)
             case .edge:
                 store.deleteEdge(id)
             case .inkPage:
                 store.deleteInkPage(id)
+            case .attachment:
+                removeAttachment(id)
             }
         case .unknown:
             break
         }
+    }
+
+    /// Allegato eliminato definitivamente: riga, annotazioni e file locale.
+    private func removeAttachment(_ id: UUID) {
+        store.removePending(.attachment, id)
+        for page in store.allInkPages() where page.attachmentID == id { store.removePending(.inkPage, page.id) }
+        store.deleteAttachment(id)
+        attachments?.files.remove(id)
     }
 }

@@ -25,6 +25,10 @@ final class NotesModel {
     let deviceID: String
     let store: SwiftDataSyncStore
     let repository: Repository
+    /// File degli allegati sul dispositivo.
+    let files: AttachmentFileStore
+    /// Scaricamento dei file dal bucket; nil se la sync non è configurata.
+    @ObservationIgnored private(set) var transfer: AttachmentTransfer?
     @ObservationIgnored private var engine: SyncEngine?
     @ObservationIgnored private var autoSync: AutoSync?
     @ObservationIgnored private let defaults: UserDefaults
@@ -36,12 +40,14 @@ final class NotesModel {
         case failed(String)
     }
 
-    init(container: ModelContainer, defaults: UserDefaults = .standard, startSync: Bool = true) {
+    init(container: ModelContainer, defaults: UserDefaults = .standard, startSync: Bool = true, attachmentsDirectory: URL? = nil) {
         self.defaults = defaults
         deviceID = Self.deviceID(defaults)
         store = SwiftDataSyncStore(container: container)
         repository = Repository(store: store, deviceID: deviceID)
-        repository.purgeTrash()
+        let files = DirectoryAttachmentFiles(directory: attachmentsDirectory ?? Self.defaultAttachmentsDirectory)
+        self.files = files
+        repository.purgeTrash { files.remove($0) }
         reload()
         if startSync { configureSync() }
     }
@@ -70,6 +76,10 @@ final class NotesModel {
     func history(of id: UUID) -> [NodeVersionRecord] { repository.history(of: id) }
 
     // MARK: Disegno
+
+    static var defaultAttachmentsDirectory: URL {
+        URL.applicationSupportDirectory.appendingPathComponent("Allegati", isDirectory: true)
+    }
 
     func inkPages(of nodeID: UUID) -> [InkPageRecord] {
         _ = inkRevision
@@ -253,7 +263,7 @@ final class NotesModel {
         perform { try repository.restoreVersion(version, of: id) }
     }
 
-    private func perform(_ action: () throws -> Void) {
+    func perform(_ action: () throws -> Void) {
         do {
             try action()
             changed()
@@ -262,7 +272,7 @@ final class NotesModel {
         }
     }
 
-    private func changed() {
+    func changed() {
         reload()
         scheduleSync()
     }
@@ -321,11 +331,15 @@ final class NotesModel {
         autoSync?.stop()
         autoSync = nil
         engine = nil
+        transfer = nil
         guard let url = URL(string: workerURL), url.scheme == "https", let credentials = AccessKeychain.load() else {
             syncStatus = .notConfigured
             return
         }
-        let engine = SyncEngine(store: store, transport: HTTPSyncTransport(baseURL: url, credentials: credentials), deviceID: deviceID)
+        let transport = HTTPSyncTransport(baseURL: url, credentials: credentials)
+        let transfer = AttachmentTransfer(transport: transport, files: files)
+        self.transfer = transfer
+        let engine = SyncEngine(store: store, transport: transport, deviceID: deviceID, attachments: transfer)
         self.engine = engine
         syncStatus = .idle(lastSync: nil)
         let autoSync = AutoSync(engine: engine) { [weak self] outcome in self?.finished(outcome) }

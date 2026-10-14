@@ -5,8 +5,9 @@ select has_extension('extensions', 'vector', 'estensione vector installata');
 
 select tables_are('public', array[
   'nodes', 'edges', 'node_versions', 'attachments', 'pdf_pages', 'chunks', 'chats',
-  'messages', 'quizzes', 'reviews', 'review_logs', 'goals', 'exams', 'sync_changes', 'keepalive', 'purged', 'ink_pages'
-], 'tabelle della sezione 5 più keepalive, purged e ink_pages');
+  'messages', 'quizzes', 'reviews', 'review_logs', 'goals', 'exams', 'sync_changes', 'keepalive', 'purged', 'ink_pages',
+  'storage_trash'
+], 'tabelle della sezione 5 più keepalive, purged, ink_pages e storage_trash');
 
 select is(
   (select count(*)::int from pg_tables where schemaname = 'public' and not rowsecurity),

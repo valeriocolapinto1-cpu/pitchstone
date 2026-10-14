@@ -24,6 +24,12 @@ public protocol SyncStore: AnyObject {
     func saveInkPage(_ page: InkPageRecord)
     func deleteInkPage(_ id: UUID)
 
+    func attachment(_ id: UUID) -> AttachmentRecord?
+    func allAttachments() -> [AttachmentRecord]
+    func saveAttachment(_ attachment: AttachmentRecord)
+    /// Elimina la riga e le annotazioni del PDF (non il file locale).
+    func deleteAttachment(_ id: UUID)
+
     /// Outbox in ordine di inserimento.
     func pendingChanges() -> [PendingChange]
     func pendingChange(_ entity: Entity, _ id: UUID) -> PendingChange?
@@ -49,6 +55,7 @@ public final class InMemoryStore: SyncStore {
     private var edges: [UUID: EdgeRecord] = [:]
     private var history: [UUID: [NodeVersionRecord]] = [:]
     private var pages: [UUID: InkPageRecord] = [:]
+    private var attachments: [UUID: AttachmentRecord] = [:]
     private var outbox: [PendingChange] = []
     public var cursor: Int64 = 0
 
@@ -76,6 +83,15 @@ public final class InMemoryStore: SyncStore {
     public func allInkPages() -> [InkPageRecord] { pages.values.sorted { $0.createdAt < $1.createdAt } }
     public func saveInkPage(_ page: InkPageRecord) { pages[page.id] = page }
     public func deleteInkPage(_ id: UUID) { pages[id] = nil }
+
+    public func attachment(_ id: UUID) -> AttachmentRecord? { attachments[id] }
+    public func allAttachments() -> [AttachmentRecord] { attachments.values.sorted { $0.createdAt < $1.createdAt } }
+    public func saveAttachment(_ attachment: AttachmentRecord) { attachments[attachment.id] = attachment }
+
+    public func deleteAttachment(_ id: UUID) {
+        attachments[id] = nil
+        pages = pages.filter { $0.value.attachmentID != id }
+    }
 
     public func deleteEdge(_ id: UUID) { edges[id] = nil }
 

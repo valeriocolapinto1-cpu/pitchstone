@@ -127,6 +127,9 @@ public final class InkPageEntity {
     public var pageNo: Int
     public var background: String
     @Attribute(.externalStorage) public var inkData: Data
+    /// Annotazione di un PDF (fase 4): attributi facoltativi, migrazione leggera.
+    public var attachmentID: UUID?
+    public var pdfPage: Int?
     public var version: Int
     public var createdAt: Date
     public var updatedAt: Date
@@ -139,6 +142,8 @@ public final class InkPageEntity {
         pageNo = r.pageNo
         background = r.background.rawValue
         inkData = r.inkData
+        attachmentID = r.attachmentID
+        pdfPage = r.pdfPage
         version = r.version
         createdAt = r.createdAt
         updatedAt = r.updatedAt
@@ -151,6 +156,8 @@ public final class InkPageEntity {
         pageNo = r.pageNo
         background = r.background.rawValue
         if inkData != r.inkData { inkData = r.inkData }
+        attachmentID = r.attachmentID
+        pdfPage = r.pdfPage
         version = r.version
         createdAt = r.createdAt
         updatedAt = r.updatedAt
@@ -161,8 +168,68 @@ public final class InkPageEntity {
     public var record: InkPageRecord {
         InkPageRecord(
             id: id, nodeID: nodeID, pageNo: pageNo, background: InkBackground(rawValue: background) ?? .blank,
-            inkData: inkData, version: version, createdAt: createdAt, updatedAt: updatedAt,
-            deletedAt: deletedAt, deviceID: deviceID)
+            inkData: inkData, attachmentID: attachmentID, pdfPage: pdfPage, version: version, createdAt: createdAt,
+            updatedAt: updatedAt, deletedAt: deletedAt, deviceID: deviceID)
+    }
+}
+
+/// Allegato: solo la descrizione, il file sta in Application Support.
+@Model
+public final class AttachmentEntity {
+    @Attribute(.unique) public var id: UUID
+    public var nodeID: UUID?
+    public var kind: String
+    public var fileName: String
+    public var sizeBytes: Int
+    public var pageCount: Int?
+    public var sha256: String
+    public var partCount: Int
+    public var version: Int
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var deletedAt: Date?
+    public var deviceID: String
+    public var isUploaded: Bool
+
+    public init(_ r: AttachmentRecord) {
+        id = r.id
+        nodeID = r.nodeID
+        kind = r.kind.rawValue
+        fileName = r.fileName
+        sizeBytes = r.sizeBytes
+        pageCount = r.pageCount
+        sha256 = r.sha256
+        partCount = r.partCount
+        version = r.version
+        createdAt = r.createdAt
+        updatedAt = r.updatedAt
+        deletedAt = r.deletedAt
+        deviceID = r.deviceID
+        isUploaded = r.isUploaded
+    }
+
+    func update(from r: AttachmentRecord) {
+        nodeID = r.nodeID
+        kind = r.kind.rawValue
+        fileName = r.fileName
+        sizeBytes = r.sizeBytes
+        pageCount = r.pageCount
+        sha256 = r.sha256
+        partCount = r.partCount
+        version = r.version
+        createdAt = r.createdAt
+        updatedAt = r.updatedAt
+        deletedAt = r.deletedAt
+        deviceID = r.deviceID
+        isUploaded = r.isUploaded
+    }
+
+    public var record: AttachmentRecord? {
+        guard let kind = AttachmentKind(rawValue: kind) else { return nil }
+        return AttachmentRecord(
+            id: id, nodeID: nodeID, kind: kind, fileName: fileName, sizeBytes: sizeBytes, pageCount: pageCount,
+            sha256: sha256, partCount: partCount, version: version, createdAt: createdAt, updatedAt: updatedAt,
+            deletedAt: deletedAt, deviceID: deviceID, isUploaded: isUploaded)
     }
 }
 
@@ -212,7 +279,7 @@ public enum PitchstoneSchema {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemory)
         let schema = Schema([
             NodeEntity.self, EdgeEntity.self, NodeVersionEntity.self, InkPageEntity.self, OutboxEntity.self,
-            SyncStateEntity.self,
+            SyncStateEntity.self, AttachmentEntity.self,
         ])
         return try ModelContainer(for: schema, configurations: [configuration])
     }

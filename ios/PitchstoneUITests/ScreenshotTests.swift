@@ -26,24 +26,39 @@ final class ScreenshotTests: XCTestCase {
         sleep(1)
         shot("04-penna")
 
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Allegati'")).firstMatch.tap()
+        let pdf = app.staticTexts["Dispensa derivate.pdf"]
+        if pdf.waitForExistence(timeout: 5) {
+            shot("05-allegati")
+            pdf.tap()
+            sleep(2)
+            shot("06-pdf")
+            app.buttons["Fine"].firstMatch.tap()
+            sleep(1)
+        } else {
+            XCTFail("allegato dimostrativo non trovato")
+        }
+        app.buttons["Fine"].firstMatch.tap()
+
         app.buttons["Grafo"].firstMatch.tap()
         // Il layout si calcola in background.
         sleep(4)
-        shot("05-grafo")
+        shot("07-grafo")
 
         let search = app.textFields["Cerca nel grafo"]
         if search.waitForExistence(timeout: 5) {
             search.tap()
             search.typeText("analisi\n")
             sleep(2)
-            shot("06-grafo-ricerca")
+            shot("08-grafo-ricerca")
         } else {
             XCTFail("campo di ricerca del grafo non trovato")
         }
 
-        app.buttons["Importa da Obsidian"].firstMatch.tap()
+        app.buttons["Importa"].firstMatch.tap()
+        app.buttons["Vault Obsidian"].firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Importa da Obsidian"].waitForExistence(timeout: 5))
-        shot("07-import")
+        shot("09-import")
     }
 
     @MainActor
