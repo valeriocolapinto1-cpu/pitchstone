@@ -97,6 +97,24 @@ private struct Scripted: ChatProvider {
         }
     }
 
+    @Test func dismissedSignalsAllowAnalysis() async throws {
+        let online = Scripted(kind: .gemini, answer: Self.answer)
+        let text = note("Oggi", "Mi hanno diagnosticato l'emicrania, devo prendere 5 mg di triptano.")
+        let signals = HealthDetector.assess(text.title + "\n" + text.bodyMD).signals
+        let plan = try await NoteAnalysis.run(
+            text, existingTitles: [], local: online, online: nil, allowOnline: false, dismissedSignals: signals)
+        #expect(!plan.create.isEmpty)
+    }
+
+    @Test func longNotesFitTheLocalModel() {
+        let long = note("Lungo", String(repeating: "parola ", count: 3000))
+        let titles = (0..<150).map { "Un titolo esistente piuttosto lungo \($0)" }
+        let prompt = NoteAnalysis.prompt(for: long, existingTitles: titles, budget: .local)
+        let used = TokenBudget.estimate(prompt.system) + TokenBudget.estimate(prompt.transcript)
+        #expect(used <= TokenBudget.local.total - TokenBudget.local.answer)
+        #expect(prompt.question.contains("Un titolo esistente piuttosto lungo 0"))
+    }
+
     @Test func promptHasNoSourcesSection() {
         let prompt = NoteAnalysis.prompt(for: Self.sample, existingTitles: ["Limiti"])
         #expect(!prompt.system.contains("FONTI"))

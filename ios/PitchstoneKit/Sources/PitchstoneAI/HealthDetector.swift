@@ -32,24 +32,30 @@ public enum HealthDetector {
         var signals = Set<String>()
         var personal = false
 
-        for phrase in personalPhrases where normalized.contains(" \(phrase) ") {
+        for phrase in healthPhrases where normalized.contains(" \(phrase) ") {
             score += 3
             signals.insert(phrase)
+            personal = true
+        }
+        // Frasi comuni ("prendo il", "sto male"): dicono che il testo è personale, non che parla di salute.
+        for phrase in personalPhrases where normalized.contains(" \(phrase) ") {
+            score += 1
             personal = true
         }
         for term in terms where normalized.contains(" \(term)") {
             score += 1
             signals.insert(term)
         }
-        for (name, pattern) in patterns where matches(pattern, normalized) {
-            score += 2
+        for (name, pattern, weight) in patterns where matches(pattern, normalized) {
+            score += weight
             signals.insert(name)
             personal = true
         }
         let firstPerson = firstPersonWords.filter { normalized.contains(" \($0) ") }.count
         if firstPerson >= 2 { personal = true }
 
-        let healthSignals = signals.subtracting(patterns.map(\.name))
+        // Serve almeno un segnale medico vero: le dosi o una frase generica da sole non bastano.
+        let healthSignals = signals.subtracting(contextPatterns)
         let suspected = personal && score >= threshold && !healthSignals.isEmpty
         return HealthAssessment(score: score, signals: signals, suspected: suspected)
     }
@@ -58,37 +64,55 @@ public enum HealthDetector {
         text.range(of: pattern, options: .regularExpression) != nil
     }
 
-    /// Frasi che parlano della propria salute: bastano da sole come indizio personale.
-    static let personalPhrases = [
+    /// Frasi che parlano della propria salute: segnale medico e indizio personale insieme.
+    static let healthPhrases = unique([
         "mi hanno diagnosticato", "mi ha diagnosticato", "il mio medico", "la mia dottoressa", "il mio dottore",
         "il mio psicologo", "la mia psicologa", "il mio psichiatra", "la mia psichiatra", "la mia terapia",
-        "le mie analisi", "i miei esami", "ho la febbre", "ho mal di", "mi fa male", "sto prendendo",
-        "devo prendere", "mi ha prescritto", "mi hanno prescritto", "mi ha visitato", "prendo il", "prendo la", "la mia pressione", "il mio ciclo", "mi sono ammalato",
-        "mi sono ammalata", "sono allergico", "sono allergica", "soffro di", "ho avuto un attacco",
-        "my doctor", "i was diagnosed", "my therapy", "my therapist", "my medication", "i am taking",
-        "i have a fever", "my blood pressure", "i suffer from",
-    ].map { TextSearch.normalize($0) }
+        "le mie analisi", "i miei esami", "ho la febbre", "ho mal di", "mi fa male", "mi ha prescritto",
+        "mi hanno prescritto", "la mia pressione", "il mio ciclo", "mi sono ammalato", "mi sono ammalata",
+        "sono allergico", "sono allergica", "soffro di", "ho avuto un attacco di panico",
+        "my doctor", "i was diagnosed", "my therapy", "my therapist", "my medication", "i have a fever",
+        "my blood pressure", "i suffer from",
+    ])
+
+    /// Frasi personali senza contenuto medico: contano solo insieme a un termine medico.
+    static let personalPhrases = unique([
+        "sto prendendo", "devo prendere", "prendo il", "prendo la", "ho preso", "mi sento", "sto male",
+        "stavo male", "mi ha visitato", "i am taking", "i took", "i feel",
+    ])
 
     /// Termini medici. Il confronto è sull'inizio della parola: "farmac" prende farmaco e farmaci.
-    static let terms = [
-        "diagnosi", "terapi", "farmac", "medicin", "ricetta medica", "posologia", "compress", "antibiotic",
+    static let terms = unique([
+        "diagnos", "terapi", "farmac", "medicin", "ricetta medica", "posologia", "compress", "antibiotic",
         "antidepressiv", "ansiolitic", "referto", "esami del sangue", "analisi del sangue", "glicemia",
         "colesterolo", "pressione arteriosa", "ipertension", "diabete", "tiroide", "emicrania", "febbre",
-        "sintom", "allergi", "intolleranz", "psicolog", "psichiatr", "ansia", "attacchi di panico",
-        "depression", "insonnia", "ciclo mestruale", "gravidanz", "visita medica", "cardiolog", "dermatolog",
-        "ginecolog", "pronto soccorso", "ricovero", "ospedale", "intervento chirurgic", "fisioterapi",
-        "medico di base", "vaccin", "dolore", "infiammazion",
-        "diagnos", "therap", "medication", "prescription", "symptom", "blood test", "anxiety", "depression",
-        "migraine", "allerg", "hospital", "surgery", "doctor", "fever",
-    ].map { TextSearch.normalize($0) }
+        "sintom", "allerg", "intolleranz", "psicolog", "psichiatr", "ansia", "attacchi di panico", "depress",
+        "insonnia", "ciclo mestruale", "gravidanz", "visita medica", "cardiolog", "dermatolog", "ginecolog",
+        "pronto soccorso", "ricovero", "ospedale", "intervento chirurgic", "fisioterapi", "medico di base",
+        "vaccin", "dolore", "infiammazion", "mal di testa", "mal di gola", "nausea",
+        "tachipirina", "paracetamolo", "ibuprofene", "aspirina", "brufen", "xanax", "lexotan",
+        "sertralina", "cortison", "antistaminic", "insulina", "ventolin",
+        "therap", "medication", "prescription", "symptom", "blood test", "anxiety", "migraine", "hospital",
+        "surgery", "doctor", "fever", "headache",
+    ])
+
+    private static func unique(_ items: [String]) -> [String] {
+        var seen = Set<String>()
+        return items.map { TextSearch.normalize($0) }.filter { seen.insert($0).inserted }
+    }
 
     /// Indizi personali misurabili: dosi, valori, visite fissate.
-    static let patterns: [(name: String, pattern: String)] = [
-        ("dose", #" \d+([,.]\d+)? ?(mg|mcg|µg|ml|gocce|ui)\b"#),
-        ("pressione misurata", #" \d{2,3}/\d{2,3}\b"#),
-        ("valore di laboratorio", #" \d+([,.]\d+)? ?mg/dl\b"#),
-        ("temperatura", #" 3[6-9]([,.]\d)? ?°"#),
-        ("visita fissata", #" (visita|controllo|appuntamento) (dal|dalla|con il|con la|dallo) "#),
+    /// Indizi che dicono "personale" ma non "salute": una dose da sola, una data con "controllo dal".
+    static let contextPatterns: Set<String> = ["dose", "temperatura", "visita fissata"]
+
+    static let patterns: [(name: String, pattern: String, weight: Int)] = [
+        // Unità da farmaco, non da cucina o laboratorio di chimica: niente ml.
+        ("dose", #" \d+([,.]\d+)? ?(mg|mcg|[µμ]g|gocce|ui|compresse|cp)\b"#, 2),
+        // Con il contesto: 14/10 da solo è una data.
+        ("pressione misurata", #"(pressione|mmhg|max|min)[^0-9]{0,15}\d{2,3}/\d{2,3}\b(?!/)|\d{2,3}/\d{2,3} ?mmhg"#, 3),
+        ("valore di laboratorio", #" \d+([,.]\d+)? ?mg/dl\b"#, 2),
+        ("temperatura", #" 3[6-9]([,.]\d)? ?°"#, 2),
+        ("visita fissata", #" (visita|controllo|appuntamento) (dal|dalla|con il|con la|dallo) "#, 2),
     ]
 
     /// Due di queste parole fanno un testo in prima persona. "sono" e "i" no:

@@ -15,33 +15,39 @@ extension NotesModel {
 
     // MARK: Salute
 
-    /// Esito del rilevatore per il testo attuale del nodo, ricalcolato solo se il testo cambia.
+    /// Testo su cui decide il rilevatore: titolo, corpo e testo estratto da allegati e
+    /// scrittura a mano (un diario scritto a penna o un referto in PDF contano come il corpo).
+    private func healthText(_ node: NodeRecord) -> (key: String, text: String) {
+        let extracted = extractedByNode[node.id] ?? ""
+        let key = "\(node.updatedAt.timeIntervalSinceReferenceDate)|\(node.title.count)|\(node.bodyMD.count)|\(extracted.utf8.count)"
+        return (key, node.title + "\n" + node.bodyMD + "\n" + extracted)
+    }
+
+    /// Esito del rilevatore, ricalcolato solo quando il nodo o il suo testo estratto cambiano.
     func assessHealth(_ node: NodeRecord) -> HealthAssessment {
-        let text = node.title + "\n" + node.bodyMD
-        let fingerprint = TextSearch.fingerprint(Data(text.utf8))
-        if let cached = assessments[node.id], cached.fingerprint == fingerprint { return cached.result }
+        let (key, text) = healthText(node)
+        if let cached = assessments[node.id], cached.key == key { return cached.result }
         let result = HealthDetector.assess(text)
-        assessments[node.id] = (fingerprint, result)
+        assessments[node.id] = (key, result)
         return result
     }
 
-    /// Sospetto e non ancora giudicato: resta sull'iPad e fuori da ogni prompt.
-    /// I segnali già giudicati innocui non contano più; uno nuovo sì.
-    func isHeld(_ node: NodeRecord, record: AnalysisRecord? = nil) -> Bool {
-        guard node.deletedAt == nil, !Privacy.isSensitive(node) else { return false }
+    /// Sospetto e non ancora giudicato: resta sull'iPad e fuori da ogni prompt, anche nel
+    /// cestino (un nodo eliminato si sincronizza con tutto il suo testo). I segnali già
+    /// giudicati innocui non contano più; uno nuovo sì.
+    func isHeld(_ node: NodeRecord) -> Bool {
+        guard !Privacy.isSensitive(node) else { return false }
         let assessment = assessHealth(node)
         guard assessment.suspected else { return false }
-        let dismissed = Set((record ?? analysisStore.record(node.id))?.dismissedSignals ?? [])
-        return !assessment.signals.isSubset(of: dismissed)
+        return !assessment.signals.isSubset(of: dismissedSignals[node.id] ?? [])
     }
 
     func refreshAnalysisState() {
+        extractedByNode = Dictionary(grouping: extractedTexts, by: \.nodeID)
+            .mapValues { $0.map(\.text).joined(separator: "\n") }
         let records = analysisStore.all()
-        var suspects = Set<UUID>()
-        for node in nodes where isHeld(node, record: records[node.id] ?? AnalysisRecord(nodeID: node.id)) {
-            suspects.insert(node.id)
-        }
-        healthSuspects = suspects
+        dismissedSignals = records.compactMapValues { $0.dismissedSignals.isEmpty ? nil : Set($0.dismissedSignals) }
+        healthSuspects = Set(nodes.filter(isHeld).map(\.id))
         var pending: [UUID: [PendingProposal]] = [:]
         for (id, record) in records where !record.pending.isEmpty {
             if let proposals = try? JSONDecoder().decode([PendingProposal].self, from: record.pending), !proposals.isEmpty,
@@ -58,6 +64,7 @@ extension NotesModel {
         var record = analysisStore.record(id) ?? AnalysisRecord(nodeID: id)
         record.dismissedSignals = Array(Set(record.dismissedSignals).union(assessHealth(node).signals)).sorted()
         analysisStore.save(record)
+        dismissedSignals[id] = Set(record.dismissedSignals)
         reload()
         flushSync()
     }
@@ -72,6 +79,8 @@ extension NotesModel {
             return update(id) { $0.area = .salute } ? id : nil
         }
         let copy = repository.createNode(type: node.type, title: node.title, body: node.bodyMD, area: .salute, tags: node.tags)
+        // Pagine a penna e allegati mai caricati vanno con il testo: nessuno parte più.
+        repository.moveLocalContent(from: id, to: copy.id)
         do {
             _ = try repository.updateNode(id) {
                 $0.title = String(localized: "Nota spostata nei dati di salute")
@@ -102,7 +111,8 @@ extension NotesModel {
         let titles = activeNodes.filter { !Privacy.isSensitive($0) && !healthSuspects.contains($0.id) && $0.id != id }.map(\.title)
         let providers = analysisProviders
         let plan = try await NoteAnalysis.run(
-            source, existingTitles: titles, local: providers.local, online: providers.online, allowOnline: allowOnline)
+            source, existingTitles: titles, local: providers.local, online: providers.online, allowOnline: allowOnline,
+            dismissedSignals: dismissedSignals[id] ?? [])
         return apply(plan, to: source)
     }
 
@@ -125,14 +135,19 @@ extension NotesModel {
         }
         var record = analysisStore.record(source.id) ?? AnalysisRecord(nodeID: source.id)
         var pending = (try? JSONDecoder().decode([PendingProposal].self, from: record.pending)) ?? []
-        for proposal in plan.confirm where !pending.contains(where: { $0.id == proposal.id }) && node(titled: proposal.node.title) == nil {
+        var added = 0
+        for proposal in plan.confirm
+        where !pending.contains(where: { $0.id == proposal.id }) && !record.discarded.contains(proposal.id)
+            && node(titled: proposal.node.title) == nil {
             pending.append(proposal)
+            added += 1
         }
-        record.pending = (try? JSONEncoder().encode(pending)) ?? Data()
-        record.analyzedFingerprint = analysisFingerprint(current)
+        record.pending = pending.isEmpty ? Data() : ((try? JSONEncoder().encode(pending)) ?? Data())
+        // Il testo che il modello ha letto, non quello di adesso: una modifica nel frattempo si rianalizza.
+        record.analyzedFingerprint = analysisFingerprint(source)
         analysisStore.save(record)
         reload()
-        return AnalysisOutcome(created: created, linked: linked, pending: plan.confirm.count)
+        return AnalysisOutcome(created: created, linked: linked, pending: added)
     }
 
     private func connected(_ a: UUID, _ b: UUID) -> Bool {
@@ -160,6 +175,10 @@ extension NotesModel {
 
     func discardProposal(_ proposal: PendingProposal, from sourceID: UUID) {
         removeProposal(proposal, from: sourceID)
+        if var record = analysisStore.record(sourceID), !record.discarded.contains(proposal.id) {
+            record.discarded.append(proposal.id)
+            analysisStore.save(record)
+        }
         reload()
     }
 
@@ -176,6 +195,11 @@ extension NotesModel {
     /// Dopo le modifiche, con il modello locale e solo per i nodi toccati in questa
     /// sessione: gratis, offline, senza consumare la quota di Gemini.
     func scheduleAnalysis() {
+        // Un'analisi in corso non si interrompe: crea nodi, e ogni nodo nuovo la riprogrammerebbe.
+        guard !analysisRunning else {
+            analyzeAgain = true
+            return
+        }
         analyzing?.cancel()
         analyzing = Task { [weak self] in
             do {
@@ -183,19 +207,31 @@ extension NotesModel {
             } catch {
                 return
             }
-            await self?.analyzeRecentEdits()
+            guard let self else { return }
+            analysisRunning = true
+            await analyzeRecentEdits()
+            analysisRunning = false
+            if analyzeAgain {
+                analyzeAgain = false
+                scheduleAnalysis()
+            }
         }
     }
 
     func analyzeRecentEdits() async {
         guard let local = analysisProviders.local, await local.isAvailable() else { return }
         for id in recentlyEdited {
-            guard !Task.isCancelled else { return }
             guard let node = node(id), node.deletedAt == nil, !isSensitive(id), !node.tags.contains(ChatTranscript.tag),
-                  node.bodyMD.count >= 200,
-                  analysisStore.record(id)?.analyzedFingerprint != analysisFingerprint(node) else { continue }
-            _ = try? await analyze(id, allowOnline: false)
-            recentlyEdited.remove(id)
+                  node.bodyMD.count >= 200 else {
+                recentlyEdited.remove(id)
+                continue
+            }
+            guard analysisStore.record(id)?.analyzedFingerprint != analysisFingerprint(node) else {
+                recentlyEdited.remove(id)
+                continue
+            }
+            // Esce dalla coda solo se l'analisi è riuscita.
+            if (try? await analyze(id, allowOnline: false)) != nil { recentlyEdited.remove(id) }
         }
     }
 }

@@ -75,14 +75,23 @@ public enum NoteAnalysis {
     Non inventare concetti che non sono nell'appunto.
     """
 
-    /// Il prompt per un appunto. Mai per un nodo sensibile o sospetto: lo decide chi chiama.
-    public static func prompt(for node: NodeRecord, existingTitles: [String]) -> ChatPrompt {
-        let titles = existingTitles.prefix(150).joined(separator: "; ")
+    /// Il prompt per un appunto, dentro il budget del modello: un quarto ai titoli
+    /// esistenti, il resto all'appunto (dall'inizio). Mai per un nodo sensibile o sospetto.
+    public static func prompt(for node: NodeRecord, existingTitles: [String], budget: TokenBudget = .gemini) -> ChatPrompt {
+        // Token liberi, convertiti in caratteri con la stessa stima prudente del prompt.
+        let free = max(200, budget.total - budget.answer - TokenBudget.estimate(instructions) - 60) * 3
+        var titles = ""
+        for title in existingTitles.prefix(150) {
+            let next = titles.isEmpty ? title : titles + "; " + title
+            guard next.count <= free / 4 else { break }
+            titles = next
+        }
+        let body = String(node.bodyMD.prefix(min(maxInput, free - titles.count - node.title.count - 80)))
         let question = """
         TITOLO: \(node.title)
         TITOLI GIÀ ESISTENTI: \(titles.isEmpty ? "nessuno" : titles)
         APPUNTO:
-        \(String(node.bodyMD.prefix(maxInput)))
+        \(body)
         """
         return ChatPrompt(instructions: instructions, sources: [], history: [], question: question, localOnly: false,
                           includesSources: false)
@@ -162,12 +171,14 @@ extension NoteAnalysis {
     /// Analizza con il modello locale; con Gemini solo se `allowOnline` (analisi chiesta
     /// dall'utente) e se il locale manca o risponde male.
     public static func run(
-        _ node: NodeRecord, existingTitles: [String], local: ChatProvider?, online: ChatProvider?, allowOnline: Bool
+        _ node: NodeRecord, existingTitles: [String], local: ChatProvider?, online: ChatProvider?, allowOnline: Bool,
+        dismissedSignals: Set<String> = []
     ) async throws -> AnalysisPlan {
-        guard !Privacy.isSensitive(node), !HealthDetector.assess(node.title + "\n" + node.bodyMD).suspected else {
+        // Ultima difesa: un nodo di salute, o sospetto e non ancora giudicato innocuo, non entra in un prompt.
+        let assessment = HealthDetector.assess(node.title + "\n" + node.bodyMD)
+        guard !Privacy.isSensitive(node), !assessment.suspected || assessment.signals.isSubset(of: dismissedSignals) else {
             throw ChatError.sensitiveContent
         }
-        let prompt = Self.prompt(for: node, existingTitles: existingTitles)
         var providers: [ChatProvider] = []
         if let local, await local.isAvailable() { providers.append(local) }
         if allowOnline, let online, await online.isAvailable() { providers.append(online) }
@@ -175,7 +186,7 @@ extension NoteAnalysis {
         var lastError: Error = ChatError.invalidAnswer
         for provider in providers {
             do {
-                let answer = try await provider.reply(to: prompt)
+                let answer = try await provider.reply(to: Self.prompt(for: node, existingTitles: existingTitles, budget: provider.budget))
                 if let graph = parse(answer) {
                     return plan(graph, source: node, existingTitles: existingTitles)
                 }

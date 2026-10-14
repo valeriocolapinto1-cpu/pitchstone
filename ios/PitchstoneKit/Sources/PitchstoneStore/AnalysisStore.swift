@@ -12,12 +12,18 @@ public struct AnalysisRecord: Sendable, Equatable {
     public var dismissedSignals: [String]
     /// Proposte da confermare, nel formato scelto dall'app (JSON).
     public var pending: Data
+    /// Proposte scartate: una nuova analisi non le ripropone.
+    public var discarded: [String]
 
-    public init(nodeID: UUID, analyzedFingerprint: String? = nil, dismissedSignals: [String] = [], pending: Data = Data()) {
+    public init(
+        nodeID: UUID, analyzedFingerprint: String? = nil, dismissedSignals: [String] = [], pending: Data = Data(),
+        discarded: [String] = []
+    ) {
         self.nodeID = nodeID
         self.analyzedFingerprint = analyzedFingerprint
         self.dismissedSignals = dismissedSignals
         self.pending = pending
+        self.discarded = discarded
     }
 }
 
@@ -27,16 +33,20 @@ public final class AnalysisStateEntity {
     public var analyzedFingerprint: String?
     public var dismissedSignals: [String]
     public var pending: Data
+    public var discarded: [String] = []
 
     init(_ r: AnalysisRecord) {
         nodeID = r.nodeID
         analyzedFingerprint = r.analyzedFingerprint
         dismissedSignals = r.dismissedSignals
         pending = r.pending
+        discarded = r.discarded
     }
 
     var record: AnalysisRecord {
-        AnalysisRecord(nodeID: nodeID, analyzedFingerprint: analyzedFingerprint, dismissedSignals: dismissedSignals, pending: pending)
+        AnalysisRecord(
+            nodeID: nodeID, analyzedFingerprint: analyzedFingerprint, dismissedSignals: dismissedSignals, pending: pending,
+            discarded: discarded)
     }
 }
 
@@ -64,6 +74,7 @@ public final class AnalysisStore {
             entity.analyzedFingerprint = record.analyzedFingerprint
             entity.dismissedSignals = record.dismissedSignals
             entity.pending = record.pending
+            entity.discarded = record.discarded
         } else {
             context.insert(AnalysisStateEntity(record))
         }

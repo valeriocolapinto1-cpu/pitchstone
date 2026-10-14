@@ -17,6 +17,9 @@ import Testing
         "Promemoria: controllo dal dermatologo il 12 marzo per il neo sulla schiena.",
         "Antibiotico: amoxicillina 1 g ogni 12 ore per 6 giorni. Mi fa male la gola.",
         "Insonnia anche stanotte, ho dormito tre ore. Il medico mi ha prescritto la melatonina.",
+        "Oggi mi sento depresso e ho preso lo xanax.",
+        "Ho preso 2 tachipirina, stavo male.",
+        "Pressione stamattina 150/95, un po' alta.",
     ]
 
     static let notHealth = [
@@ -36,6 +39,14 @@ import Testing
         "Gravidanza e parto nella letteratura dell'Ottocento: Verga e Manzoni.",
         "Ospedale da campo della Croce Rossa nella prima guerra mondiale, i feriti e i sintomi da gas.",
         "I mitocondri sono gli organelli che producono energia; i farmaci possono danneggiarli.",
+        "Domani prendo il treno per Bologna.",
+        "Sto prendendo appunti sulla lezione di storia.",
+        "Devo prendere il libro in biblioteca.",
+        "Prendo la metro alle 8.",
+        "Mi ha visitato la nonna ieri.",
+        "Lezione di medicina del 14/10: anatomia del cuore.",
+        "Laboratorio: ho diluito 25 ml di soluzione, i farmaci si sciolgono in acqua.",
+        "In questo momento sto studiando Okinawa e la sua storia.",
     ]
 
     @Test(arguments: personal)

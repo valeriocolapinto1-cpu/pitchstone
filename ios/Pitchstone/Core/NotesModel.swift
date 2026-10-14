@@ -40,9 +40,17 @@ final class NotesModel {
     /// Analisi automatica (fase 6): stato locale, nodi sospettati di contenere dati di
     /// salute (trattenuti sul dispositivo e fuori dai prompt), proposte da confermare.
     let analysisStore: AnalysisStore
-    private(set) var healthSuspects: Set<UUID> = []
-    private(set) var pendingProposals: [UUID: [PendingProposal]] = [:]
-    @ObservationIgnored var assessments: [UUID: (fingerprint: String, result: HealthAssessment)] = [:]
+    // Scritti da NotesModel+Analysis.swift: un `private(set)` non si può impostare da un altro file.
+    var healthSuspects: Set<UUID> = []
+    var pendingProposals: [UUID: [PendingProposal]] = [:]
+    /// Esiti del rilevatore, per nodo: si ricalcolano solo se cambia la chiave (data e testo estratto).
+    @ObservationIgnored var assessments: [UUID: (key: String, result: HealthAssessment)] = [:]
+    /// Segnali giudicati innocui, per nodo: in memoria, letti dalla sync a ogni voce.
+    @ObservationIgnored var dismissedSignals: [UUID: Set<String>] = [:]
+    /// Testo estratto da allegati e pagine a penna, per nodo: conta anche per la salute.
+    @ObservationIgnored var extractedByNode: [UUID: String] = [:]
+    @ObservationIgnored var analysisRunning = false
+    @ObservationIgnored var analyzeAgain = false
     /// Nodi modificati in questa sessione: l'analisi automatica guarda solo questi.
     @ObservationIgnored var recentlyEdited: Set<UUID> = []
     @ObservationIgnored var analyzing: Task<Void, Never>?

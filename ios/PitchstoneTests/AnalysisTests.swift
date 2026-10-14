@@ -80,6 +80,23 @@ struct AnalysisTests {
         #expect(model.healthSuspects.contains(diary.id))
     }
 
+    @Test("un appunto sospetto resta trattenuto anche nel cestino")
+    func trashedSuspectStaysHeld() throws {
+        let diary = model.createNode(title: "Oggi", body: "Mi hanno diagnosticato l'emicrania.")
+        model.trash(diary.id)
+        #expect(model.isHeld(try #require(model.node(diary.id))))
+    }
+
+    @Test("una scelta \"Non lo è\" permette l'analisi")
+    func dismissedNodesCanBeAnalyzed() async throws {
+        let diary = model.createNode(title: "Lezione", body: "Il mio medico di base, il prof. Rossi, insegna farmacologia: oggi 5 mg di esempi.")
+        #expect(model.healthSuspects.contains(diary.id))
+        model.dismissHealth(diary.id)
+        model.analysisProvidersOverride = (Scripted(kind: .local, answer: Self.answer), nil)
+        let outcome = try await model.analyze(diary.id, allowOnline: false)
+        #expect(!outcome.created.isEmpty)
+    }
+
     @Test("confermare la salute: un nodo mai sincronizzato cambia area")
     func confirmHealthLocalNode() throws {
         let diary = model.createNode(title: "Oggi", body: "Ho la febbre, 38,5°, e mal di gola.")
@@ -99,7 +116,9 @@ struct AnalysisTests {
         model.update(note.id) { $0.bodyMD = "Mi hanno diagnosticato l'emicrania, devo prendere 5 mg di triptano." }
         #expect(model.healthSuspects.contains(note.id))
 
+        let page = try #require(model.createInkPage(in: note.id, background: .blank))
         let copy = try #require(model.confirmHealth(note.id))
+        #expect(model.store.inkPage(page.id)?.nodeID == copy)
         #expect(copy != note.id)
         let moved = try #require(model.node(copy))
         #expect(Privacy.isSensitive(moved))

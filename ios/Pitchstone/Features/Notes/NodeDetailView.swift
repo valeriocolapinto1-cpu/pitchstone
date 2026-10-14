@@ -9,6 +9,7 @@ struct NodeDetailView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openChat) private var openChat
+    @Environment(\.openSource) private var openSource
     let nodeID: UUID
     let onOpenNode: (String, Area) -> Void
 
@@ -104,7 +105,8 @@ struct NodeDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 header(node)
                 AnalysisBanners(nodeID: nodeID, beforeAction: save) { moved in
-                    if let copy = notes.node(moved) { onOpenNode(copy.title, .salute) }
+                    // Per id: un altro nodo può avere lo stesso titolo.
+                    openSource(SourceRef(nodeID: moved))
                 }
                 Divider()
                 switch effectiveMode {

@@ -38,3 +38,34 @@ struct HoldTests {
         #expect(b.store.allEdges().count == 1)
     }
 }
+
+@MainActor
+@Suite("Contenuto spostato nei dati di salute")
+struct MoveContentTests {
+    @Test("pagine e allegati mai caricati passano al nodo nuovo e lasciano l'outbox")
+    func movesLocalContent() throws {
+        let store = InMemoryStore()
+        let repository = Repository(store: store, deviceID: "t")
+        let original = repository.createNode(type: .idea, title: "Diario", area: .studio)
+        let health = repository.createNode(type: .idea, title: "Diario", area: .salute)
+        let page = try repository.createInkPage(in: original.id)
+        let local = try repository.createAttachment(
+            nodeID: original.id, kind: .pdf, fileName: "referto.pdf", sizeBytes: 10, sha256: "a")
+        var uploaded = try repository.createAttachment(
+            nodeID: original.id, kind: .pdf, fileName: "dispensa.pdf", sizeBytes: 10, sha256: "b")
+        uploaded.isUploaded = true
+        uploaded.version = 1
+        store.saveAttachment(uploaded)
+        let note = try repository.createInkPage(in: original.id, pdf: (uploaded.id, 0))
+
+        repository.moveLocalContent(from: original.id, to: health.id)
+
+        #expect(store.inkPage(page.id)?.nodeID == health.id)
+        #expect(store.attachment(local.id)?.nodeID == health.id)
+        #expect(store.attachment(uploaded.id)?.nodeID == original.id)
+        #expect(store.inkPage(note.id)?.nodeID == health.id)
+        #expect(store.inkPage(note.id)?.attachmentID == nil)
+        #expect(store.pendingChange(.inkPage, page.id) == nil)
+        #expect(store.pendingChange(.attachment, local.id) == nil)
+    }
+}
