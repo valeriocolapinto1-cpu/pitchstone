@@ -1,3 +1,4 @@
+import PitchstoneNotes
 import PitchstoneSync
 import SwiftUI
 
@@ -14,7 +15,7 @@ struct NodeListView: View {
                 if !nodes.isEmpty {
                     Section(area.label) {
                         ForEach(nodes) { node in
-                            NodeRow(node: node)
+                            NodeRow(node: node, hit: textHits[node.id])
                                 .tag(node.id)
                                 .swipeActions {
                                     Button(role: .destructive) {
@@ -66,10 +67,17 @@ struct NodeListView: View {
         let nodes = notes.activeNodes.sorted { $0.updatedAt > $1.updatedAt }
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return nodes }
+        let hits = textHits
         return nodes.filter {
             $0.title.localizedStandardContains(q) || $0.bodyMD.localizedStandardContains(q)
-                || $0.tags.contains { $0.localizedStandardContains(q) }
+                || $0.tags.contains { $0.localizedStandardContains(q) } || hits[$0.id] != nil
         }
+    }
+
+    /// Risultati nel testo di PDF, foto e scrittura a mano.
+    private var textHits: [UUID: TextHit] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        return q.isEmpty ? [:] : notes.textMatches(q)
     }
 
     private func create(_ type: NodeType) {
@@ -80,6 +88,7 @@ struct NodeListView: View {
 
 private struct NodeRow: View {
     let node: NodeRecord
+    var hit: TextHit?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -90,7 +99,15 @@ private struct NodeRow: View {
                 Text(node.title.isEmpty ? String(localized: "Senza titolo") : node.title)
                     .lineLimit(1)
                     .foregroundStyle(node.title.isEmpty ? .secondary : .primary)
-                if let preview = node.preview {
+                if let hit {
+                    Label {
+                        Text(hit.snippet).lineLimit(2)
+                    } icon: {
+                        Image(systemName: hit.source == .handwriting ? "pencil.and.scribble" : hit.source == .image ? "photo" : "doc.richtext")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else if let preview = node.preview {
                     Text(preview)
                         .font(.caption)
                         .foregroundStyle(.secondary)

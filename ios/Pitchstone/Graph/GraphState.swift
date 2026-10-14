@@ -31,7 +31,15 @@ final class GraphState {
     func refresh(from notes: NotesModel) {
         guard notes.revision != cachedRevision else { return }
         cachedRevision = notes.revision
-        graph = GraphData(nodes: notes.nodes, edges: notes.edges)
+        // Il testo di PDF, foto e scrittura a mano è ricercabile anche nel grafo.
+        let extracted = notes.extractedTextByNode()
+        let nodes = extracted.isEmpty ? notes.nodes : notes.nodes.map { node in
+            guard let text = extracted[node.id] else { return node }
+            var copy = node
+            copy.bodyMD += "\n" + text
+            return copy
+        }
+        graph = GraphData(nodes: nodes, edges: notes.edges)
         if graph.structureKey != laidOutKey {
             relayout()
         } else {
