@@ -181,4 +181,70 @@ struct AttachmentSyncTests {
                                               sizeBytes: 101 * AttachmentParts.partSize, sha256: String(repeating: "0", count: 64))
         }
     }
+
+    @Test("un file rovinato non blocca gli altri allegati")
+    func badFileDoesNotBlock() async throws {
+        let a = Device("ipad-a", server: server)
+        let broken = try add(file(2_000), to: a, node: nil, name: "rotto.pdf")
+        a.files.remove(broken.id)
+        a.clock.now = a.clock.now.addingTimeInterval(1)
+        let good = try add(file(3_000, seed: 9), to: a, node: nil)
+        _ = await a.engine.sync()
+        #expect(server.attachment(good.id) != nil)
+        #expect(server.attachment(broken.id) == nil)
+        #expect(a.engine.rejections.map(\.id) == [broken.id])
+    }
+
+    @Test("un file vuoto non si allega")
+    func emptyFile() throws {
+        let a = Device("ipad-a", server: server)
+        #expect(throws: AttachmentError.corrupted) { try add(Data(), to: a, node: nil) }
+    }
+
+    @Test("un allegato mai caricato e già nel cestino non arriva al server")
+    func trashedBeforeUpload() async throws {
+        let a = Device("ipad-a", server: server)
+        let attachment = try add(file(1_000), to: a, node: nil)
+        try a.repository.updateAttachment(attachment.id) { $0.deletedAt = Date() }
+        a.transport.online = false
+        _ = await a.engine.sync()
+        a.transport.online = true
+        _ = await a.engine.sync()
+        #expect(server.attachment(attachment.id) == nil)
+        #expect(server.bucket.isEmpty)
+        #expect(a.store.pendingChanges().isEmpty)
+    }
+
+    @Test("un nodo con un allegato già nel bucket non può diventare di salute")
+    func uploadedAttachmentLocksSensitivity() async throws {
+        let a = Device("ipad-a", server: server)
+        let node = a.repository.createNode(type: .concept, title: "Referto", area: .studio)
+        try add(file(1_000), to: a, node: node.id)
+        server.rejectNodes = true
+        _ = await a.engine.sync()
+        #expect(!server.bucket.isEmpty, "file caricato, riga non ancora arrivata")
+        #expect(throws: RepositoryError.syncedNodeCannotBecomeSensitive) {
+            try a.repository.updateNode(node.id) { $0.area = .salute }
+        }
+    }
+
+    @Test("il nodo di un allegato non cambia; un allegato eliminato non risorge")
+    func nodeLockedAndNoResurrection() async throws {
+        let a = Device("ipad-a", server: server)
+        let b = Device("ipad-b", server: server)
+        let first = a.repository.createNode(type: .concept, title: "Uno", area: .studio)
+        let second = a.repository.createNode(type: .concept, title: "Due", area: .studio)
+        let attachment = try add(file(1_000), to: a, node: first.id)
+        try a.repository.updateAttachment(attachment.id) { $0.nodeID = second.id }
+        #expect(a.store.attachment(attachment.id)?.nodeID == first.id)
+        _ = await a.engine.sync()
+        _ = await b.engine.sync()
+
+        try b.repository.updateAttachment(attachment.id) { $0.fileName = "nuovo.pdf" }
+        try a.repository.updateAttachment(attachment.id) { $0.deletedAt = Date() }
+        _ = await a.engine.sync()
+        server.purge(olderThan: Date().addingTimeInterval(1))
+        _ = await b.engine.sync()
+        #expect(server.attachment(attachment.id) == nil, "la rinomina di B non lo fa risorgere")
+    }
 }

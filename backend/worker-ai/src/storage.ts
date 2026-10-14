@@ -37,6 +37,12 @@ export async function signUrl(
 ): Promise<Response> {
   const base = new URL("/storage/v1/", config.url);
   const upload = action === "upload";
+  if (upload) {
+    // Solo prima che l'allegato abbia la sua riga: dopo il contenuto non cambia.
+    const allowed = await rpc(config, "attachment_upload_allowed", { p_id: path.split("/")[0] }, fetchImpl);
+    if (!allowed.ok) return Response.json({ error: "errore del database" }, { status: 502 });
+    if ((await allowed.json()) !== true) return Response.json({ error: "allegato già caricato" }, { status: 409 });
+  }
   const endpoint = new URL(`object/${upload ? "upload/sign" : "sign"}/${BUCKET}/${path}`, base);
   const upstream = await fetchImpl(endpoint, {
     method: "POST",
@@ -66,7 +72,8 @@ export async function signUrl(
  * (coda `storage_trash`, riempita da purge_trash). Parte una volta al giorno.
  */
 export async function emptyStorageTrash(config: SupabaseConfig, fetchImpl: typeof fetch = fetch): Promise<number> {
-  const listed = await rpc(config, "storage_trash_list", { p_limit: 100 }, fetchImpl);
+  // 10 allegati per volta: al massimo 1.000 parti, il limite di una cancellazione dello storage.
+  const listed = await rpc(config, "storage_trash_list", { p_limit: 10 }, fetchImpl);
   if (!listed.ok) return 0;
   const queue = (await listed.json()) as { path: string; part_count: number }[];
   if (queue.length === 0) return 0;

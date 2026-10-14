@@ -16,20 +16,29 @@ describe("allegati: URL firmati", () => {
   });
 
   it("caricamento: URL firmato con upsert, chiave segreta solo verso Supabase", async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      Response.json({ url: `/object/upload/sign/attachments/${id}/part-000?token=abc` }),
+    const fetchImpl = vi.fn<typeof fetch>(async (input) =>
+      String(input).endsWith("/rpc/attachment_upload_allowed")
+        ? Response.json(true)
+        : Response.json({ url: `/object/upload/sign/attachments/${id}/part-000?token=abc` }),
     );
     const response = await signUrl(config, "upload", `${id}/part-000`, fetchImpl);
     expect(await response.json()).toEqual({
       url: `https://db.example/storage/v1/object/upload/sign/attachments/${id}/part-000?token=abc`,
       method: "PUT",
     });
-    const [input, init] = fetchImpl.mock.calls[0];
+    const [input, init] = fetchImpl.mock.calls[1];
     expect(String(input)).toBe(`https://db.example/storage/v1/object/upload/sign/attachments/${id}/part-000`);
     const headers = init?.headers as Record<string, string>;
     expect(headers.apikey).toBe("sb_secret_test");
     expect(headers["x-upsert"]).toBe("true");
     expect(headers.authorization).toBeUndefined();
+  });
+
+  it("caricamento rifiutato per un allegato che ha già la sua riga", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => Response.json(false));
+    const response = await signUrl(config, "upload", `${id}/part-000`, fetchImpl);
+    expect(response.status).toBe(409);
+    expect(fetchImpl.mock.calls.some(([input]) => String(input).includes("/storage/"))).toBe(false);
   });
 
   it("scaricamento: URL firmato di breve durata", async () => {

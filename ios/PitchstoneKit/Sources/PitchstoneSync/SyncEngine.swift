@@ -69,15 +69,23 @@ public final class SyncEngine {
     // MARK: Allegati
 
     /// Prima i file, poi la riga: un altro dispositivo non vede mai un allegato
-    /// senza le sue parti nel bucket. Un errore rimanda alla sync successiva.
+    /// senza le sue parti nel bucket. Un errore di rete rimanda alla sync successiva;
+    /// un file mancante o rovinato parcheggia l'allegato senza bloccare gli altri.
     private func uploadAttachments() async {
         guard let attachments else { return }
         for record in store.allAttachments()
         where !record.isUploaded && record.deletedAt == nil && Privacy.isSyncable(record, in: store) {
+            guard store.pendingChange(.attachment, record.id)?.rejection == nil else { continue }
             do {
                 try await attachments.upload(record)
+            } catch let error as AttachmentError {
+                if var pending = store.pendingChange(.attachment, record.id) {
+                    pending.rejection = error == .missingLocalFile ? "file non presente sul dispositivo" : "file non valido"
+                    store.savePending(pending)
+                }
+                continue
             } catch {
-                return
+                continue
             }
             guard var current = store.attachment(record.id) else { continue }
             current.isUploaded = true
@@ -126,9 +134,14 @@ public final class SyncEngine {
         for pending in store.pendingChanges()
         where pending.rejection == nil && !sent.contains(Key(entity: pending.entity, id: pending.id)) {
             if batch.count == Self.batchSize { break }
-            // Un allegato parte solo quando le sue parti sono nel bucket.
-            if pending.entity == .attachment, let record = store.attachment(pending.id), !record.isUploaded,
-               record.deletedAt == nil, Privacy.isSyncable(record, in: store) { continue }
+            // Un allegato parte solo quando le sue parti sono nel bucket. Uno mai caricato
+            // e già nel cestino non deve arrivare al server: la voce lascia l'outbox.
+            if pending.entity == .attachment, let record = store.attachment(pending.id), !record.isUploaded {
+                if record.deletedAt != nil, record.version == 0 {
+                    store.removePending(.attachment, record.id)
+                }
+                continue
+            }
             guard let change = outgoing(for: pending) else { continue }
             // Una voce che da sola supera il limite non passerebbe mai dal Worker:
             // resta in outbox come rifiutata invece di bloccare tutta la sync.
