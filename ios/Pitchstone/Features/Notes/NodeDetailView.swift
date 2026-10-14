@@ -1,3 +1,4 @@
+import PitchstoneAI
 import PitchstoneSync
 import SwiftUI
 
@@ -23,6 +24,13 @@ struct NodeDetailView: View {
     @State private var mode: Mode
     @State private var showingHistory = false
     @State private var showingAttachments = false
+    @State private var analysisResult: AnalysisResult?
+    @State private var analyzing = false
+
+    struct AnalysisResult: Identifiable {
+        let id = UUID()
+        var outcome: NotesModel.AnalysisOutcome
+    }
     /// Ultimo stato salvato o caricato: si salva solo ciò che l'utente ha cambiato
     /// rispetto a qui, e si ricarica dall'archivio solo se non ci sono modifiche in sospeso.
     @State private var baseline: Draft?
@@ -50,6 +58,9 @@ struct NodeDetailView: View {
             }
             .sheet(isPresented: $showingAttachments) {
                 AttachmentsView(nodeID: nodeID)
+            }
+            .sheet(item: $analysisResult) { result in
+                AnalysisSheet(nodeID: nodeID, outcome: result.outcome)
             }
             .onAppear(perform: load)
             .onDisappear {
@@ -92,6 +103,9 @@ struct NodeDetailView: View {
         if let node = notes.node(nodeID) {
             VStack(alignment: .leading, spacing: 0) {
                 header(node)
+                AnalysisBanners(nodeID: nodeID, beforeAction: save) { moved in
+                    if let copy = notes.node(moved) { onOpenNode(copy.title, .salute) }
+                }
                 Divider()
                 switch effectiveMode {
                 case .write:
@@ -175,6 +189,23 @@ struct NodeDetailView: View {
             } label: {
                 Label("Chiedi", systemImage: "bubble.left.and.text.bubble.right")
             }
+            Button {
+                save()
+                analyzing = true
+                Task {
+                    defer { analyzing = false }
+                    do {
+                        analysisResult = AnalysisResult(outcome: try await notes.analyze(nodeID, allowOnline: true))
+                    } catch ChatError.sensitiveContent {
+                        notes.errorMessage = String(localized: "I dati di salute, anche solo sospetti, non vengono analizzati.")
+                    } catch {
+                        notes.errorMessage = ChatModel.message(for: error)
+                    }
+                }
+            } label: {
+                Label("Analizza", systemImage: analyzing ? "hourglass" : "sparkles")
+            }
+            .disabled(analyzing)
             Button {
                 save()
                 showingAttachments = true

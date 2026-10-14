@@ -279,7 +279,7 @@ public enum PitchstoneSchema {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemory)
         let schema = Schema([
             NodeEntity.self, EdgeEntity.self, NodeVersionEntity.self, InkPageEntity.self, OutboxEntity.self,
-            SyncStateEntity.self, AttachmentEntity.self, ExtractedTextEntity.self,
+            SyncStateEntity.self, AttachmentEntity.self, ExtractedTextEntity.self, AnalysisStateEntity.self,
         ])
         return try ModelContainer(for: schema, configurations: [configuration])
     }

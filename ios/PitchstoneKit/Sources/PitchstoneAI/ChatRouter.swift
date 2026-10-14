@@ -19,6 +19,8 @@ public enum ChatError: Error, Equatable, Sendable {
     case contextTooLarge
     /// Il modello locale ha rifiutato di rispondere (filtri di sicurezza).
     case refused
+    /// La risposta non ha la forma richiesta (l'analisi vuole un JSON).
+    case invalidAnswer
 }
 
 public struct ChatReply: Sendable, Equatable {

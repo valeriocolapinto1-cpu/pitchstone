@@ -47,10 +47,12 @@ public enum Chunker {
     /// Testo che la chat può leggere: nodi attivi e non sensibili, con il testo
     /// estratto dai loro allegati e dalle pagine a penna. I nodi di salute non
     /// entrano mai: nessun loro frammento esiste, quindi nessun prompt li contiene.
-    public static func corpus(nodes: [NodeRecord], extracted: [ExtractedText]) -> [Chunk] {
+    /// `excluding`: nodi sospettati di contenere dati di salute, in attesa della scelta dell'utente.
+    public static func corpus(nodes: [NodeRecord], extracted: [ExtractedText], excluding: Set<UUID> = []) -> [Chunk] {
         // Le chat salvate non sono fonti: il modello citerebbe le sue risposte di prima.
         let allowed = nodes.filter {
             $0.deletedAt == nil && !Privacy.isSensitive($0) && !$0.tags.contains(ChatTranscript.tag)
+                && !excluding.contains($0.id)
         }
         let byNode = Dictionary(grouping: extracted, by: \.nodeID)
         return allowed.flatMap { chunks(of: $0, extracted: byNode[$0.id] ?? []) }

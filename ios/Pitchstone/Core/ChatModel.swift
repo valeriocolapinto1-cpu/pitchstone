@@ -94,6 +94,8 @@ final class ChatModel {
             String(localized: "Nessun modello disponibile. Offline serve Apple Intelligence attiva; online, configura il Worker nelle impostazioni.")
         case ChatError.contextTooLarge:
             String(localized: "La domanda è troppo lunga per il modello sul dispositivo: accorciala.")
+        case ChatError.invalidAnswer:
+            String(localized: "Il modello non ha risposto nel formato atteso: riprova.")
         case ChatError.refused:
             String(localized: "Il modello sul dispositivo non ha voluto rispondere a questa domanda.")
         case let error as HTTPError where error.status == 429:

@@ -37,6 +37,17 @@ final class NotesModel {
     @ObservationIgnored let autoIndex: Bool
     @ObservationIgnored var indexing: Task<Void, Never>?
     @ObservationIgnored var indexAgain = false
+    /// Analisi automatica (fase 6): stato locale, nodi sospettati di contenere dati di
+    /// salute (trattenuti sul dispositivo e fuori dai prompt), proposte da confermare.
+    let analysisStore: AnalysisStore
+    private(set) var healthSuspects: Set<UUID> = []
+    private(set) var pendingProposals: [UUID: [PendingProposal]] = [:]
+    @ObservationIgnored var assessments: [UUID: (fingerprint: String, result: HealthAssessment)] = [:]
+    /// Nodi modificati in questa sessione: l'analisi automatica guarda solo questi.
+    @ObservationIgnored var recentlyEdited: Set<UUID> = []
+    @ObservationIgnored var analyzing: Task<Void, Never>?
+    /// Nei test: modelli finti per l'analisi.
+    @ObservationIgnored var analysisProvidersOverride: (local: ChatProvider?, online: ChatProvider?)?
     /// Chat: indice dei frammenti (ricostruito quando cambia `revision`), vettori, modelli.
     @ObservationIgnored var chatIndex: (revision: Int, index: SemanticIndex)?
     @ObservationIgnored lazy var chatEmbedder: TextEmbedder? = {
@@ -65,6 +76,7 @@ final class NotesModel {
         self.defaults = defaults
         self.autoIndex = autoIndex
         textIndex = TextIndexStore(container: container)
+        analysisStore = AnalysisStore(container: container)
         deviceID = Self.deviceID(defaults)
         store = SwiftDataSyncStore(container: container)
         repository = Repository(store: store, deviceID: deviceID)
@@ -82,6 +94,7 @@ final class NotesModel {
         nodes = store.allNodes()
         edges = store.allEdges()
         extractedTexts = textIndex.all()
+        refreshAnalysisState()
         inkRevision += 1
     }
 
@@ -264,6 +277,7 @@ final class NotesModel {
         do {
             let old = store.node(id)
             let updated = try repository.updateNode(id, change)
+            recentlyEdited.insert(id)
             if updated.bodyMD != old?.bodyMD { syncLinks(of: id) }
             if updated.title != old?.title { resyncLinks(mentioning: [old?.title ?? "", updated.title]) }
             changed()
@@ -298,7 +312,10 @@ final class NotesModel {
     }
 
     func changed() {
-        if autoIndex { scheduleIndexing() }
+        if autoIndex {
+            scheduleIndexing()
+            scheduleAnalysis()
+        }
         reload()
         scheduleSync()
     }
@@ -368,6 +385,8 @@ final class NotesModel {
         let transfer = AttachmentTransfer(transport: transport, files: files)
         self.transfer = transfer
         let engine = SyncEngine(store: store, transport: transport, deviceID: deviceID, attachments: transfer)
+        // Un nodo che sembra un dato di salute aspetta la scelta dell'utente prima di partire.
+        engine.holds = { [weak self] node in self?.isHeld(node) ?? false }
         self.engine = engine
         syncStatus = .idle(lastSync: nil)
         let autoSync = AutoSync(engine: engine) { [weak self] outcome in self?.finished(outcome) }

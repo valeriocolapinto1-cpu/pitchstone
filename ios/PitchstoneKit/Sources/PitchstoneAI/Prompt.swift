@@ -56,13 +56,19 @@ public struct ChatPrompt: Sendable, Equatable {
     public var question: String
     /// Conversazione su un dato di salute: resta sul dispositivo.
     public var localOnly: Bool
+    /// Falso per i compiti senza fonti (l'analisi di un appunto): niente sezione FONTI.
+    public var includesSources: Bool
 
-    public init(instructions: String, sources: [Chunk], history: [ChatMessage], question: String, localOnly: Bool) {
+    public init(
+        instructions: String, sources: [Chunk], history: [ChatMessage], question: String, localOnly: Bool,
+        includesSources: Bool = true
+    ) {
         self.instructions = instructions
         self.sources = sources
         self.history = history
         self.question = question
         self.localOnly = localOnly
+        self.includesSources = includesSources
     }
 
     /// Fonti numerate da 1, come le citazioni nella risposta.
@@ -75,7 +81,7 @@ public struct ChatPrompt: Sendable, Equatable {
 
     /// Istruzioni con le fonti: il "system prompt".
     public var system: String {
-        instructions + "\n\nFONTI\n" + sourcesText
+        includesSources ? instructions + "\n\nFONTI\n" + sourcesText : instructions
     }
 
     /// Tutto in un testo, per il modello locale.

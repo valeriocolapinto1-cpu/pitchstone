@@ -1,0 +1,201 @@
+import Foundation
+import PitchstoneAI
+import PitchstoneNotes
+import PitchstoneStore
+import PitchstoneSync
+
+/// Analisi automatica degli appunti (ADR 0010): rilevamento dei dati di salute,
+/// estrazione di nodi e collegamenti, conferma per persone e salute.
+extension NotesModel {
+    struct AnalysisOutcome: Equatable {
+        var created: [String]
+        var linked: Int
+        var pending: Int
+    }
+
+    // MARK: Salute
+
+    /// Esito del rilevatore per il testo attuale del nodo, ricalcolato solo se il testo cambia.
+    func assessHealth(_ node: NodeRecord) -> HealthAssessment {
+        let text = node.title + "\n" + node.bodyMD
+        let fingerprint = TextSearch.fingerprint(Data(text.utf8))
+        if let cached = assessments[node.id], cached.fingerprint == fingerprint { return cached.result }
+        let result = HealthDetector.assess(text)
+        assessments[node.id] = (fingerprint, result)
+        return result
+    }
+
+    /// Sospetto e non ancora giudicato: resta sull'iPad e fuori da ogni prompt.
+    /// I segnali già giudicati innocui non contano più; uno nuovo sì.
+    func isHeld(_ node: NodeRecord, record: AnalysisRecord? = nil) -> Bool {
+        guard node.deletedAt == nil, !Privacy.isSensitive(node) else { return false }
+        let assessment = assessHealth(node)
+        guard assessment.suspected else { return false }
+        let dismissed = Set((record ?? analysisStore.record(node.id))?.dismissedSignals ?? [])
+        return !assessment.signals.isSubset(of: dismissed)
+    }
+
+    func refreshAnalysisState() {
+        let records = analysisStore.all()
+        var suspects = Set<UUID>()
+        for node in nodes where isHeld(node, record: records[node.id] ?? AnalysisRecord(nodeID: node.id)) {
+            suspects.insert(node.id)
+        }
+        healthSuspects = suspects
+        var pending: [UUID: [PendingProposal]] = [:]
+        for (id, record) in records where !record.pending.isEmpty {
+            if let proposals = try? JSONDecoder().decode([PendingProposal].self, from: record.pending), !proposals.isEmpty,
+               node(id)?.deletedAt == nil {
+                pending[id] = proposals
+            }
+        }
+        pendingProposals = pending
+    }
+
+    /// "Non è un dato di salute": i segnali attuali non bloccano più il nodo.
+    func dismissHealth(_ id: UUID) {
+        guard let node = node(id) else { return }
+        var record = analysisStore.record(id) ?? AnalysisRecord(nodeID: id)
+        record.dismissedSignals = Array(Set(record.dismissedSignals).union(assessHealth(node).signals)).sorted()
+        analysisStore.save(record)
+        reload()
+        flushSync()
+    }
+
+    /// "È un dato di salute": un nodo mai sincronizzato passa all'area salute; uno già
+    /// sul server non può (ADR 0001), quindi il contenuto va in un nodo di salute nuovo
+    /// e l'originale, svuotato, va nel cestino. Il testo trattenuto non parte mai.
+    @discardableResult
+    func confirmHealth(_ id: UUID) -> UUID? {
+        guard let node = node(id) else { return nil }
+        if node.version == 0 {
+            return update(id) { $0.area = .salute } ? id : nil
+        }
+        let copy = repository.createNode(type: node.type, title: node.title, body: node.bodyMD, area: .salute, tags: node.tags)
+        do {
+            _ = try repository.updateNode(id) {
+                $0.title = String(localized: "Nota spostata nei dati di salute")
+                $0.bodyMD = ""
+                $0.tags = []
+            }
+            try repository.trashNode(id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        analysisStore.remove(id)
+        changed()
+        return copy.id
+    }
+
+    // MARK: Estrazione
+
+    private var analysisProviders: (local: ChatProvider?, online: ChatProvider?) {
+        if let analysisProvidersOverride { return analysisProvidersOverride }
+        let online = chatUsesGemini ? workerTransport.map(WorkerChatProvider.init(transport:)) : nil
+        return (LocalModelProvider(), online)
+    }
+
+    /// Analizza un nodo e applica la proposta: crea i nodi sicuri e gli archi, mette in
+    /// attesa persone e possibili dati di salute. `allowOnline`: solo su richiesta.
+    func analyze(_ id: UUID, allowOnline: Bool) async throws -> AnalysisOutcome {
+        guard let source = node(id), !isSensitive(id) else { throw ChatError.sensitiveContent }
+        let titles = activeNodes.filter { !Privacy.isSensitive($0) && !healthSuspects.contains($0.id) && $0.id != id }.map(\.title)
+        let providers = analysisProviders
+        let plan = try await NoteAnalysis.run(
+            source, existingTitles: titles, local: providers.local, online: providers.online, allowOnline: allowOnline)
+        return apply(plan, to: source)
+    }
+
+    private func apply(_ plan: AnalysisPlan, to source: NodeRecord) -> AnalysisOutcome {
+        // Il nodo può essere cambiato mentre il modello rispondeva.
+        guard let current = node(source.id), current.deletedAt == nil, !isSensitive(source.id) else {
+            return AnalysisOutcome(created: [], linked: 0, pending: 0)
+        }
+        var created: [String] = []
+        for proposal in plan.create where node(titled: proposal.title) == nil {
+            createNode(type: proposal.type, title: proposal.title, area: current.area, body: proposal.summary)
+            created.append(proposal.title)
+        }
+        var linked = 0
+        for link in plan.links {
+            guard let a = node(titled: link.from)?.id, let b = node(titled: link.to)?.id, a != b,
+                  !isSensitive(a), !isSensitive(b), !connected(a, b) else { continue }
+            perform { try repository.createEdge(from: a, to: b, kind: .ai) }
+            linked += 1
+        }
+        var record = analysisStore.record(source.id) ?? AnalysisRecord(nodeID: source.id)
+        var pending = (try? JSONDecoder().decode([PendingProposal].self, from: record.pending)) ?? []
+        for proposal in plan.confirm where !pending.contains(where: { $0.id == proposal.id }) && node(titled: proposal.node.title) == nil {
+            pending.append(proposal)
+        }
+        record.pending = (try? JSONEncoder().encode(pending)) ?? Data()
+        record.analyzedFingerprint = analysisFingerprint(current)
+        analysisStore.save(record)
+        reload()
+        return AnalysisOutcome(created: created, linked: linked, pending: plan.confirm.count)
+    }
+
+    private func connected(_ a: UUID, _ b: UUID) -> Bool {
+        edges.contains { $0.deletedAt == nil && Set([$0.sourceID, $0.targetID]) == Set([a, b]) }
+    }
+
+    func analysisFingerprint(_ node: NodeRecord) -> String {
+        TextSearch.fingerprint(Data((node.title + "\n" + node.bodyMD).utf8))
+    }
+
+    /// Conferma una proposta: le persone vanno nell'area persone, la salute in un nodo
+    /// di salute (solo locale). Il nodo nuovo si collega a quello analizzato.
+    @discardableResult
+    func confirmProposal(_ proposal: PendingProposal, from sourceID: UUID) -> UUID {
+        removeProposal(proposal, from: sourceID)
+        let created: NodeRecord = switch proposal.reason {
+        case .person: createNode(type: .person, title: proposal.node.title, area: .persone, body: proposal.node.summary)
+        case .health: createNode(type: .health, title: proposal.node.title, area: .salute, body: proposal.node.summary)
+        }
+        if node(sourceID)?.deletedAt == nil {
+            perform { try repository.createEdge(from: sourceID, to: created.id, kind: .ai) }
+        }
+        return created.id
+    }
+
+    func discardProposal(_ proposal: PendingProposal, from sourceID: UUID) {
+        removeProposal(proposal, from: sourceID)
+        reload()
+    }
+
+    private func removeProposal(_ proposal: PendingProposal, from sourceID: UUID) {
+        guard var record = analysisStore.record(sourceID) else { return }
+        var pending = (try? JSONDecoder().decode([PendingProposal].self, from: record.pending)) ?? []
+        pending.removeAll { $0.id == proposal.id }
+        record.pending = pending.isEmpty ? Data() : ((try? JSONEncoder().encode(pending)) ?? Data())
+        analysisStore.save(record)
+    }
+
+    // MARK: In automatico
+
+    /// Dopo le modifiche, con il modello locale e solo per i nodi toccati in questa
+    /// sessione: gratis, offline, senza consumare la quota di Gemini.
+    func scheduleAnalysis() {
+        analyzing?.cancel()
+        analyzing = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(20))
+            } catch {
+                return
+            }
+            await self?.analyzeRecentEdits()
+        }
+    }
+
+    func analyzeRecentEdits() async {
+        guard let local = analysisProviders.local, await local.isAvailable() else { return }
+        for id in recentlyEdited {
+            guard !Task.isCancelled else { return }
+            guard let node = node(id), node.deletedAt == nil, !isSensitive(id), !node.tags.contains(ChatTranscript.tag),
+                  node.bodyMD.count >= 200,
+                  analysisStore.record(id)?.analyzedFingerprint != analysisFingerprint(node) else { continue }
+            _ = try? await analyze(id, allowOnline: false)
+            recentlyEdited.remove(id)
+        }
+    }
+}
