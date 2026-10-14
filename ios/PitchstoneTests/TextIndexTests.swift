@@ -42,7 +42,9 @@ struct TextIndexTests {
 
     @Test("OCR: il testo di una foto di appunti diventa ricercabile")
     func imageOCR() async throws {
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 400)).image { context in
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 400), format: format).image { context in
             UIColor.white.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 1200, height: 400))
             "Teorema di Lagrange".draw(at: CGPoint(x: 60, y: 140),
@@ -50,7 +52,8 @@ struct TextIndexTests {
         }
         let node = try model.importDocument(at: try file("Lavagna.png", try #require(image.pngData())), area: .studio)
         await model.reindexText()
-        let hit = try #require(model.textMatches("lagrange")[node], "OCR: \(model.extractedTexts.map(\.text))")
+        let recognized = TextExtractor.recognize(try #require(image.cgImage))
+        let hit = try #require(model.textMatches("lagrange")[node], "OCR diretto: \(recognized); indice: \(model.extractedTexts.map(\.text))")
         #expect(hit.source == .image)
     }
 

@@ -26,16 +26,19 @@ extension NotesModel {
     }
 
     /// Estrae il testo delle fonti nuove o cambiate e toglie quello delle fonti sparite.
+    /// Se non cambia nulla non ricarica niente: dopo ogni modifica costa poco.
     func reindexText() async {
+        let known = textIndex.fingerprints()
         var present = Set<UUID>()
+        var updated = false
         for attachment in store.allAttachments() where attachment.deletedAt == nil {
             guard let nodeID = attachment.nodeID, files.exists(attachment.id) else { continue }
             present.insert(attachment.id)
-            guard textIndex.fingerprint(of: attachment.id) != attachment.sha256 else { continue }
+            guard known[attachment.id] != attachment.sha256 else { continue }
             let url = files.url(for: attachment.id)
             let kind = attachment.kind
             let id = attachment.id
-            let texts: [ExtractedText] = await Task.detached(priority: .utility) {
+            let texts = await Task.detached(priority: .utility) { () -> [ExtractedText] in
                 switch kind {
                 case .pdf:
                     TextExtractor.pdfPages(at: url).map {
@@ -50,20 +53,30 @@ extension NotesModel {
             }.value
             textIndex.replace(sourceID: id, fingerprint: attachment.sha256, with: texts,
                               placeholder: ExtractedText(nodeID: nodeID, sourceID: id, source: .pdf, text: ""))
+            updated = true
         }
+        let trashedAttachments = Set(store.allAttachments().filter { $0.deletedAt != nil }.map(\.id))
         for page in store.allInkPages() where page.deletedAt == nil && !page.inkData.isEmpty {
+            // Le annotazioni di un allegato nel cestino non sono più ricercabili.
+            if let attachment = page.attachmentID, trashedAttachments.contains(attachment) { continue }
             present.insert(page.id)
-            let fingerprint = TextSearch.fingerprint(page.inkData)
-            guard textIndex.fingerprint(of: page.id) != fingerprint else { continue }
+            // Impronta economica: cambia a ogni modifica della pagina, locale o dalla sync.
+            let fingerprint = "\(page.version)-\(page.updatedAt.timeIntervalSince1970)-\(page.inkData.count)"
+            guard known[page.id] != fingerprint else { continue }
             let data = page.inkData
             let text = await Task.detached(priority: .utility) { TextExtractor.handwriting(data) }.value
             let entry = ExtractedText(nodeID: page.nodeID, sourceID: page.id, source: .handwriting, page: page.pdfPage, text: text)
             textIndex.replace(sourceID: page.id, fingerprint: fingerprint, with: text.isEmpty ? [] : [entry],
                               placeholder: ExtractedText(nodeID: page.nodeID, sourceID: page.id, source: .handwriting, text: ""))
+            updated = true
         }
-        for gone in textIndex.sourceIDs().subtracting(present) { textIndex.remove(sourceID: gone) }
-        // Ricarica (e aggiorna la revisione): elenco e grafo vedono subito il testo nuovo.
-        reload()
+        for gone in Set(known.keys).subtracting(present) {
+            textIndex.remove(sourceID: gone)
+            updated = true
+        }
+        // Ricarica (e aggiorna la revisione) solo se qualcosa è cambiato: elenco e grafo
+        // vedono subito il testo nuovo.
+        if updated { reload() }
     }
 
     /// Il primo risultato per ogni nodo, per l'elenco e la ricerca.

@@ -371,6 +371,8 @@ final class NotesModel {
     var rejections: [Rejection] { engine?.rejections ?? [] }
 
     private func finished(_ outcome: SyncOutcome) {
+        // Pagine e allegati arrivati con la sync diventano ricercabili.
+        if autoIndex, case .synced(_, let pulled) = outcome, pulled > 0 { scheduleIndexing() }
         switch outcome {
         case .synced: syncStatus = .idle(lastSync: Date())
         case .failed(let message): syncStatus = .failed(message)

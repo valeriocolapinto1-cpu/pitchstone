@@ -44,9 +44,11 @@ enum TextExtractor {
         let bounds = drawing.bounds.insetBy(dx: -24, dy: -24)
         guard bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 else { return "" }
         // Tema chiaro: l'inchiostro "colore etichetta" diventa nero.
+        // Al massimo 3000 pixel per lato: tratti lontani non fanno un'immagine enorme.
+        let scale = min(2, 3000 / max(bounds.width, bounds.height))
         var ink = UIImage()
         UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
-            ink = drawing.image(from: bounds, scale: 2)
+            ink = drawing.image(from: bounds, scale: scale)
         }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
