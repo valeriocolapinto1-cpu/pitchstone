@@ -117,6 +117,11 @@ private func quiz(_ review: ReviewState? = nil, created: Date = day(1)) -> QuizR
         // Più in ritardo per primi.
         #expect(queue.first?.id == due.first?.id)
 
+        // Un ripasso che scade stasera si può fare già dalla mattina.
+        let tonight = quiz(ReviewState(due: day(10, 21), stability: 3, difficulty: 5, reps: 1, phase: .review, lastReview: day(7)))
+        #expect(plan.queue([tonight], logs: [], now: day(10, 8)).map(\.id) == [tonight.id])
+        #expect(plan.practice([tonight], now: day(9, 8)).map(\.id) == [tonight.id])
+
         let done = due.prefix(15).map { ReviewLogRecord(quizID: $0.id, rating: .good, answeredAt: day(10, 9)) }
         #expect(plan.queue(due + fresh, logs: done, now: day(10)).count == 5)
         let few = plan.queue(Array(due.prefix(2)) + fresh, logs: [], now: day(10))
@@ -146,33 +151,32 @@ private func quiz(_ review: ReviewState? = nil, created: Date = day(1)) -> QuizR
     let planner = ReminderPlanner(plan: StudyPlan(calendar: calendar))
     let fsrs = FSRS()
 
-    @Test func morningReminderAtEightWhenReviewsAreDue() {
+    @Test func morningRemindersAtEightForTheNextDays() {
         let reviewed = quiz(fsrs.review(.new(at: day(1)), rating: .good, now: day(1)))  // scade il 4
-        let log = ReviewLogRecord(quizID: reviewed.id, rating: .good, answeredAt: day(3, 20))
-        let early = planner.reminders(quizzes: [reviewed], logs: [log], now: day(4, 6))
-        #expect(early.first { $0.kind == .morning }?.fireDate == day(4, 8))
-        #expect(early.first { $0.kind == .morning }?.body == "Hai 1 ripasso in scadenza.")
-        let late = planner.reminders(quizzes: [reviewed], logs: [log], now: day(3, 21))
-        #expect(late.first { $0.kind == .morning }?.fireDate == day(4, 8))
-        // Nessun ripasso in scadenza domani: nessun promemoria.
-        #expect(planner.reminders(quizzes: [reviewed], logs: [log], now: day(2, 21)).isEmpty)
-    }
-
-    @Test func missedDayAlertsImmediately() {
-        let reviewed = quiz(fsrs.review(.new(at: day(1)), rating: .good, now: day(1)))
         let log = ReviewLogRecord(quizID: reviewed.id, rating: .good, answeredAt: day(1))
-        // Scadeva il 4, nessuna risposta il 4: il 5 l'avviso parte subito.
-        let missed = planner.reminders(quizzes: [reviewed], logs: [log], now: day(5, 10)).first { $0.kind == .missed }
-        #expect(missed?.fireDate == day(5, 10))
+        let mornings = planner.reminders(quizzes: [reviewed], logs: [log], now: day(3, 21)).filter { $0.kind == .morning }
+        // Dal 4 in poi il ripasso è in scadenza ogni mattina finché non si fa.
+        #expect(mornings.first?.fireDate == day(4, 8))
+        #expect(mornings.first?.body == "Hai 1 ripasso in scadenza.")
+        #expect(mornings.count == ReminderPlanner.morningDays)
+        #expect(Set(mornings.map(\.identifier)).count == mornings.count)
+        // Il 2 sera non scade niente il 3: il primo promemoria è il 4.
+        #expect(planner.reminders(quizzes: [reviewed], logs: [log], now: day(2, 21)).first { $0.kind == .morning }?.fireDate == day(4, 8))
+        // Prima delle 8 di un giorno con ripassi: anche oggi.
+        #expect(planner.reminders(quizzes: [reviewed], logs: [log], now: day(4, 6)).first { $0.kind == .morning }?.fireDate == day(4, 8))
     }
 
-    @Test func streakAtRiskAlertsAtMidnightUnlessStudied() {
+    @Test func missedDayAlertsAtMidnightOnce() {
         let reviewed = quiz(fsrs.review(.new(at: day(1)), rating: .good, now: day(1)))
         let logs = [day(2), day(3)].map { ReviewLogRecord(quizID: reviewed.id, rating: .good, answeredAt: $0) }
-        let atRisk = planner.reminders(quizzes: [reviewed], logs: logs, now: day(4, 18)).first { $0.kind == .missed }
-        #expect(atRisk?.fireDate == day(5, 0))
+        // Il 4 non si è ancora studiato: l'avviso è a mezzanotte del 4.
+        let missed = planner.reminders(quizzes: [reviewed], logs: logs, now: day(4, 18)).filter { $0.kind == .missed }
+        #expect(missed.map(\.fireDate) == [day(5, 0)])
+        // Studiato il 4: l'avviso passa alla mezzanotte del 5.
         let studied = logs + [ReviewLogRecord(quizID: reviewed.id, rating: .good, answeredAt: day(4, 19))]
-        #expect(planner.reminders(quizzes: [reviewed], logs: studied, now: day(4, 20)).allSatisfy { $0.kind != .missed })
+        #expect(planner.reminders(quizzes: [reviewed], logs: studied, now: day(4, 20)).filter { $0.kind == .missed }.map(\.fireDate) == [day(6, 0)])
+        // Streak già perso: nessun altro avviso nei giorni dopo.
+        #expect(planner.reminders(quizzes: [reviewed], logs: logs, now: day(6, 10)).allSatisfy { $0.kind != .missed })
     }
 }
 
@@ -218,6 +222,11 @@ private func quiz(_ review: ReviewState? = nil, created: Date = day(1)) -> QuizR
         #expect(!QuizGrader.gradeNumber(calc, input: "boh").correct)
         #expect(QuizGrader.number("3/4") == 0.75)
         #expect(QuizGrader.number("-2e-3") == -0.002)
+        #expect(QuizGrader.number("\u{2212}2") == -2)
+        #expect(QuizGrader.number("1.234.567") == 1_234_567)
+        #expect(QuizGrader.number("12 m") == 12)
+        #expect(QuizGrader.number("15%") == 15)
+        #expect(QuizGrader.number("9,81 m/s²") == nil || QuizGrader.number("9,81 m/s²") == 9.81)
     }
 
     @Test func parsesOpenGrades() {

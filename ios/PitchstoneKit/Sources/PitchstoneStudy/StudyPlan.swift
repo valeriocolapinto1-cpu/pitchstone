@@ -10,7 +10,7 @@ public struct StudyPlan: Sendable {
 
     public var calendar: Calendar
 
-    public init(calendar: Calendar = .current) {
+    public init(calendar: Calendar = .autoupdatingCurrent) {
         self.calendar = calendar
     }
 
@@ -18,6 +18,9 @@ public struct StudyPlan: Sendable {
     /// i nuovi, senza superare il limite del giorno contando quelli già fatti oggi.
     public func queue(_ quizzes: [QuizRecord], logs: [ReviewLogRecord], now: Date) -> [QuizRecord] {
         let today = calendar.startOfDay(for: now)
+        // I ripassi valgono per giorno: un quiz che scade stasera si può fare dalla mattina,
+        // come dice il promemoria delle 8. Solo "di nuovo" ha la precisione dei minuti.
+        let endOfToday = calendar.date(byAdding: .day, value: 1, to: today) ?? now
         let doneToday = logs.filter { $0.answeredAt >= today }
         let reviewedToday = Set(doneToday.map(\.quizID))
         let left = max(0, Self.dailyLimit - reviewedToday.count)
@@ -25,7 +28,14 @@ public struct StudyPlan: Sendable {
         let relearning = quizzes.filter {
             ($0.review.phase == .learning || $0.review.phase == .relearning) && $0.review.due <= now && reviewedToday.contains($0.id)
         }
-        let due = quizzes.filter { $0.review.phase != .new && $0.review.due <= now && !reviewedToday.contains($0.id) }
+        let due = quizzes.filter { quiz in
+            guard !reviewedToday.contains(quiz.id) else { return false }
+            switch quiz.review.phase {
+            case .new: return false
+            case .review: return quiz.review.due < endOfToday
+            case .learning, .relearning: return quiz.review.due <= now
+            }
+        }
             .sorted { $0.review.due < $1.review.due }
         // Quiz visti per la prima volta oggi: la loro prima risposta è di oggi.
         var first: [UUID: Date] = [:]
@@ -35,6 +45,14 @@ public struct StudyPlan: Sendable {
         let reviews = Array(due.prefix(left))
         let newCount = min(max(0, Self.newPerDay - newDoneToday), left - reviews.count)
         return relearning.sorted { $0.review.due < $1.review.due } + reviews + Array(newQuizzes.prefix(max(0, newCount)))
+    }
+
+    /// Allenamento quando non c'è niente in scadenza: i prossimi ripassi in anticipo
+    /// (FSRS tiene conto dell'anticipo), così lo streak si può tenere anche nei giorni vuoti.
+    public func practice(_ quizzes: [QuizRecord], now: Date, count: Int = 5) -> [QuizRecord] {
+        quizzes.filter { $0.review.phase != .new && $0.review.due > now }
+            .sorted { $0.review.due < $1.review.due }
+            .prefix(count).map { $0 }
     }
 
     /// Quanti ripassi scadono entro la fine del giorno di `date`, nuovi esclusi, entro il limite.
