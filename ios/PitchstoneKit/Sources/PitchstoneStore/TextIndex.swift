@@ -36,10 +36,30 @@ public final class ExtractedTextEntity {
 
 @MainActor
 public final class TextIndexStore {
+    // Il contesto non tiene in vita il container: va trattenuto qui.
+    private let container: ModelContainer
     private let context: ModelContext
 
     public init(container: ModelContainer) {
+        self.container = container
         context = container.mainContext
+    }
+
+    /// Un salvataggio fallito non deve lasciare il contesto condiviso con la sync in uno stato sporco.
+    private func save() {
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+        }
+    }
+
+    /// Impronte di tutte le fonti indicizzate, con una sola lettura.
+    public func fingerprints() -> [UUID: String] {
+        let d = FetchDescriptor<ExtractedTextEntity>()
+        var result: [UUID: String] = [:]
+        for entity in (try? context.fetch(d)) ?? [] { result[entity.sourceID] = entity.fingerprint }
+        return result
     }
 
     private func entities(of sourceID: UUID) -> [ExtractedTextEntity] {
@@ -61,12 +81,12 @@ public final class TextIndexStore {
         for text in texts.isEmpty ? [placeholder] : texts {
             context.insert(ExtractedTextEntity(text, fingerprint: fingerprint))
         }
-        try? context.save()
+        save()
     }
 
     public func remove(sourceID: UUID) {
         for entity in entities(of: sourceID) { context.delete(entity) }
-        try? context.save()
+        save()
     }
 
     public func all() -> [ExtractedText] {

@@ -90,7 +90,10 @@ extension NotesModel {
     func localFile(for attachment: AttachmentRecord) async throws -> URL {
         if files.exists(attachment.id) { return files.url(for: attachment.id) }
         guard let transfer else { throw AttachmentError.missingLocalFile }
-        return try await transfer.ensureLocal(attachment)
+        let url = try await transfer.ensureLocal(attachment)
+        // Il file appena scaricato diventa ricercabile.
+        if autoIndex { scheduleIndexing() }
+        return url
     }
 
     func trashAttachment(_ id: UUID) {
