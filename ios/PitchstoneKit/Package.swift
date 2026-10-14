@@ -20,14 +20,14 @@ let package = Package(
     ],
     targets: [
         .target(name: "PitchstoneSync"),
-        .target(name: "PitchstoneStore", dependencies: ["PitchstoneSync"]),
+        .target(name: "PitchstoneStore", dependencies: ["PitchstoneSync", "PitchstoneNotes"]),
         .target(name: "PitchstoneNotes", dependencies: [.product(name: "Markdown", package: "swift-markdown")]),
         .target(name: "PitchstoneGraph", dependencies: ["PitchstoneSync"]),
         .target(
             name: "PitchstoneImport",
             dependencies: ["PitchstoneSync", .product(name: "Markdown", package: "swift-markdown")]),
         .testTarget(name: "PitchstoneSyncTests", dependencies: ["PitchstoneSync"]),
-        .testTarget(name: "PitchstoneStoreTests", dependencies: ["PitchstoneStore", "PitchstoneSync"]),
+        .testTarget(name: "PitchstoneStoreTests", dependencies: ["PitchstoneStore", "PitchstoneSync", "PitchstoneNotes"]),
         .testTarget(name: "PitchstoneNotesTests", dependencies: ["PitchstoneNotes"]),
         .testTarget(name: "PitchstoneGraphTests", dependencies: ["PitchstoneGraph", "PitchstoneSync"]),
         .testTarget(
