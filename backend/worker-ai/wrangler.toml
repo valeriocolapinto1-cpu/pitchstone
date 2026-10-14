@@ -8,6 +8,7 @@ compatibility_date = "2026-10-01"
 SUPABASE_URL = ""          # https://<progetto>.supabase.co
 ACCESS_TEAM_DOMAIN = ""    # https://<team>.cloudflareaccess.com
 ACCESS_AUD = ""            # AUD tag dell'applicazione Access
+GEMINI_MODEL = "gemini-2.5-flash"
 
 # Anteprime dei branch (Workers Builds esegue `wrangler preview` fuori da main):
 # valori vuoti di proposito, così un'anteprima non raggiunge mai Supabase di

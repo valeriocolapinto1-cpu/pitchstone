@@ -12,6 +12,8 @@ struct AttachmentReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("fingerDraws") private var fingerDraws = false
     let attachment: AttachmentRecord
+    /// Pagina da mostrare all'apertura (da una citazione), da 0.
+    var initialPage: Int?
 
     @State private var fileURL: URL?
     @State private var failure: String?
@@ -24,7 +26,7 @@ struct AttachmentReaderView: View {
             Group {
                 if let fileURL {
                     if attachment.kind == .pdf {
-                        PDFReader(url: fileURL, attachment: attachment, annotating: annotating, fingerDraws: fingerDraws) {
+                        PDFReader(url: fileURL, attachment: attachment, initialPage: initialPage, annotating: annotating, fingerDraws: fingerDraws) {
                             selection = $0
                         }
                         .ignoresSafeArea(edges: .bottom)
@@ -91,6 +93,7 @@ private struct PDFReader: UIViewRepresentable {
     @Environment(NotesModel.self) private var notes
     let url: URL
     let attachment: AttachmentRecord
+    let initialPage: Int?
     let annotating: Bool
     let fingerDraws: Bool
     let onSelection: ((text: String, page: Int)?) -> Void
@@ -104,6 +107,12 @@ private struct PDFReader: UIViewRepresentable {
         view.displayDirection = .vertical
         view.pageOverlayViewProvider = context.coordinator
         view.document = PDFDocument(url: url)
+        if let initialPage {
+            // Dopo la prima impaginazione, o PDFView torna alla prima pagina.
+            DispatchQueue.main.async {
+                if let page = view.document?.page(at: initialPage) { view.go(to: page) }
+            }
+        }
         context.coordinator.view = view
         context.coordinator.onSelection = onSelection
         NotificationCenter.default.addObserver(

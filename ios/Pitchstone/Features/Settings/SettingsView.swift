@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var workerURL = ""
     @State private var clientID = ""
     @State private var clientSecret = ""
+    @State private var chatUsesGemini = true
 
     var body: some View {
         NavigationStack {
@@ -48,6 +49,13 @@ struct SettingsView: View {
                 } footer: {
                     Text("I nodi di salute non lasciano mai questo iPad.")
                 }
+                Section {
+                    Toggle("Usa Gemini quando sei online", isOn: $chatUsesGemini)
+                } header: {
+                    Text("Chat")
+                } footer: {
+                    Text("Gemini passa dal Worker e riceve solo i frammenti degli appunti pertinenti, mai i dati di salute. Offline, o se Gemini non risponde, la chat usa il modello sul dispositivo.")
+                }
             }
             .navigationTitle("Impostazioni")
             .toolbar {
@@ -56,13 +64,17 @@ struct SettingsView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Salva") {
+                        notes.chatUsesGemini = chatUsesGemini
                         notes.saveSyncSettings(workerURL: workerURL, clientID: clientID, clientSecret: clientSecret)
                         dismiss()
                     }
                     .disabled(!workerURL.isEmpty && !workerURL.hasPrefix("https://"))
                 }
             }
-            .onAppear { workerURL = notes.workerURL }
+            .onAppear {
+                workerURL = notes.workerURL
+                chatUsesGemini = notes.chatUsesGemini
+            }
         }
     }
 

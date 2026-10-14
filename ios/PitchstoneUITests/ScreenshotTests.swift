@@ -40,6 +40,21 @@ final class ScreenshotTests: XCTestCase {
         }
         app.buttons["Fine"].firstMatch.tap()
 
+        // Chat del nodo, con un modello dimostrativo al posto di Gemini.
+        app.buttons["Chiedi"].firstMatch.tap()
+        let input = app.textFields["chat-input"]
+        if input.waitForExistence(timeout: 5) {
+            input.tap()
+            input.typeText("Come si calcola la derivata?")
+            app.buttons["Invia"].firstMatch.tap()
+            XCTAssertTrue(app.staticTexts["Gemini"].waitForExistence(timeout: 15), "risposta dimostrativa")
+            shot("06b-chat")
+            app.buttons["Chat"].firstMatch.tap()
+            sleep(1)
+        } else {
+            XCTFail("chat non aperta")
+        }
+
         app.buttons["Grafo"].firstMatch.tap()
         // Il layout si calcola in background.
         sleep(4)

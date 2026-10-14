@@ -7,6 +7,7 @@ struct NodeDetailView: View {
     @Environment(NotesModel.self) private var notes
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openChat) private var openChat
     let nodeID: UUID
     let onOpenNode: (String, Area) -> Void
 
@@ -168,6 +169,12 @@ struct NodeDetailView: View {
             .frame(maxWidth: 420)
         }
         ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                save()
+                openChat(nodeID)
+            } label: {
+                Label("Chiedi", systemImage: "bubble.left.and.text.bubble.right")
+            }
             Button {
                 save()
                 showingAttachments = true

@@ -215,3 +215,98 @@ describe("sync", () => {
     expect(response.status).toBe(503);
   });
 });
+
+describe("chat", () => {
+  const question = { system: "Sei un tutor.\n\nFONTI\n[1] Cellula", messages: [{ role: "user", text: "Cos'è?" }], maxOutputTokens: 500 };
+
+  function gemini(response: Response) {
+    upstream.mockImplementation(async (input) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url === `${TEAM}/cdn-cgi/access/certs`) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      if (url.startsWith("https://generativelanguage.googleapis.com/")) return response.clone();
+      return new Response("unexpected", { status: 599 });
+    });
+  }
+
+  function geminiCalls() {
+    return upstream.mock.calls.filter(([input]) => String(input).startsWith("https://generativelanguage.googleapis.com/"));
+  }
+
+  it("richiede il token di Access", async () => {
+    const response = await call("/ai/chat", { method: "POST", body: JSON.stringify(question) });
+    expect(response.status).toBe(401);
+    expect(geminiCalls()).toHaveLength(0);
+  });
+
+  it("chiama Gemini con la chiave del Worker e restituisce il testo", async () => {
+    gemini(Response.json({ candidates: [{ content: { parts: [{ text: "Una cellula " }, { text: "[1]." }] } }] }));
+    const response = await post("/ai/chat", {
+      ...question,
+      messages: [
+        { role: "user", text: "Prima" },
+        { role: "assistant", text: "Risposta" },
+        { role: "user", text: "Cos'è?" },
+      ],
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ text: "Una cellula [1]." });
+    const [[url, init]] = geminiCalls();
+    expect(String(url)).toContain("/models/gemini-2.5-flash:generateContent");
+    expect(new Headers(init?.headers).get("x-goog-api-key")).toBe("x");
+    const body = JSON.parse(String(init?.body));
+    expect(body.systemInstruction.parts[0].text).toBe(question.system);
+    expect(body.contents.map((c: { role: string }) => c.role)).toEqual(["user", "model", "user"]);
+    expect(body.generationConfig.maxOutputTokens).toBe(500);
+  });
+
+  it("usa il modello configurato", async () => {
+    gemini(Response.json({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }));
+    const request = new Request("https://ai-proxy.example/ai/chat", {
+      method: "POST",
+      body: JSON.stringify(question),
+      headers: { "cf-access-jwt-assertion": await sign(validPayload()) },
+    });
+    await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, GEMINI_MODEL: "gemini-x" });
+    expect(String(geminiCalls()[0][0])).toContain("/models/gemini-x:generateContent");
+  });
+
+  it("rifiuta richieste non valide prima di Gemini", async () => {
+    const bad = [
+      {},
+      { ...question, messages: [] },
+      { ...question, messages: [{ role: "system", text: "x" }] },
+      { ...question, messages: [{ role: "assistant", text: "x" }] },
+      { ...question, messages: [{ role: "user", text: "" }] },
+      { ...question, maxOutputTokens: 100_000 },
+      { ...question, system: "x".repeat(200_000) },
+    ];
+    for (const body of bad) expect((await post("/ai/chat", body)).status).toBe(400);
+    expect(geminiCalls()).toHaveLength(0);
+  });
+
+  it("segnala il limite gratuito con 429 e nasconde gli altri errori", async () => {
+    gemini(new Response("quota", { status: 429 }));
+    expect((await post("/ai/chat", question)).status).toBe(429);
+    gemini(new Response("dettagli interni con la richiesta", { status: 500 }));
+    const failed = await post("/ai/chat", question);
+    expect(failed.status).toBe(502);
+    expect(JSON.stringify(await failed.json())).not.toContain("dettagli");
+  });
+
+  it("tratta una risposta bloccata come errore", async () => {
+    gemini(Response.json({ promptFeedback: { blockReason: "SAFETY" } }));
+    const response = await post("/ai/chat", question);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: "nessuna risposta (SAFETY)" });
+  });
+
+  it("restituisce 503 senza chiave Gemini", async () => {
+    const request = new Request("https://ai-proxy.example/ai/chat", {
+      method: "POST",
+      body: JSON.stringify(question),
+      headers: { "cf-access-jwt-assertion": await sign(validPayload()) },
+    });
+    const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, GEMINI_API_KEY: "" });
+    expect(response.status).toBe(503);
+  });
+});
