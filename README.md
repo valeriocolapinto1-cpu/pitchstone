@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: main
-Commit: 31c7ddc8f33b7529f242f1139d69b21df0746c2d
+Branch: fase-4-ocr
+Commit: 7629b2379ce3573fba76a13277fa30e2e4bea324
