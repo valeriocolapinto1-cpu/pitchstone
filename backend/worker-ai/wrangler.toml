@@ -6,7 +6,7 @@ compatibility_date = "2026-10-01"
 # 401 (Access) o 503 (Supabase): il Worker non apre mai la sync per errore.
 [vars]
 SUPABASE_URL = "https://tocauhzfxphnvmpklmkl.supabase.co"          # https://<progetto>.supabase.co
-ACCESS_TEAM_DOMAIN = "snowy-smoke-d179.cloudflareaccess.com"    # https://<team>.cloudflareaccess.com
+ACCESS_TEAM_DOMAIN = "https://snowy-smoke-d179.cloudflareaccess.com"    # https://<team>.cloudflareaccess.com
 ACCESS_AUD = "403239a9ba9686f0adb70bf6d77783e17f8f2c6e287189a840ea1e5a211a4817"            # AUD tag dell'applicazione Access
 GEMINI_MODEL = "gemini-2.5-flash"
 
