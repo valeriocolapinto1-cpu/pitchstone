@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-5-chat
-Commit: d09462d9b0df23aa8edbf6bf4013249830e6a900
+Branch: fase-6-analisi
+Commit: 41b47b3d4b48fe9add0c854da879472e0f626489
