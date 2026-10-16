@@ -18,6 +18,8 @@ private func node(_ title: String, type: NodeType = .concept, area: Area = .stud
         #expect(tags == ["esame", "data:2027-01-20", "stato:studio"])
         #expect(ExamInfo.parse(tags) == info)
         #expect(ExamInfo.parse(["data:2027-13-01"]).date == nil)
+        #expect(ExamInfo.parse(["data:2027-02-31"]).date == nil)
+        #expect(ExamInfo.parse(["data:2028-02-29"]).date == DateComponents(year: 2028, month: 2, day: 29))
     }
 
     @Test func calendarOrdersByDateWithLinkedNodes() {
@@ -42,6 +44,11 @@ private func node(_ title: String, type: NodeType = .concept, area: Area = .stud
         let text = VaultExport.markdown(n)
         #expect(text.hasPrefix("---\ntype: concept\narea: studio\ntags: [analisi, \"teorema di base\"]\n"))
         #expect(text.hasSuffix("---\n\nIl [[Limiti|limite]] del rapporto.\n"))
+    }
+
+    @Test func yamlEscapesBackslashAndQuotes() {
+        let text = VaultExport.markdown(node("X", tags: ["a\\b \"c\""]))
+        #expect(text.contains("tags: [\"a\\\\b \\\"c\\\"\"]"))
     }
 
     @Test func filesAreReadableAndSkipHealth() {
@@ -96,5 +103,29 @@ private func node(_ title: String, type: NodeType = .concept, area: Area = .stud
         var tampered = decoded
         tampered.nodes.append(normal)
         #expect(throws: RepositoryError.invalidArchive) { try tampered.restore(into: InMemoryStore()) { _, _ in } }
+    }
+
+    @Test func missingFilesAreReportedAndNotRestored() throws {
+        let store = InMemoryStore()
+        let repository = Repository(store: store, deviceID: "t")
+        let diary = repository.createNode(type: .health, title: "Diario", area: .salute)
+        let file = try repository.createAttachment(nodeID: diary.id, kind: .pdf, fileName: "a.pdf", sizeBytes: 3, sha256: "x")
+        let archive = LocalArchive.health(from: store, files: { _ in nil }, now: date)
+        #expect(archive.missingFiles == [file.id])
+        let fresh = InMemoryStore()
+        #expect(try archive.restore(into: fresh) { _, _ in } == 1)
+        #expect(fresh.attachment(file.id) == nil)
+    }
+
+    @Test func failedFileWriteChangesNothing() throws {
+        let store = InMemoryStore()
+        let repository = Repository(store: store, deviceID: "t")
+        let diary = repository.createNode(type: .health, title: "Diario", area: .salute)
+        _ = try repository.createAttachment(nodeID: diary.id, kind: .pdf, fileName: "a.pdf", sizeBytes: 3, sha256: "x")
+        let archive = LocalArchive.health(from: store, files: { _ in Data([1]) }, now: date)
+        struct Full: Error {}
+        let fresh = InMemoryStore()
+        #expect(throws: Full.self) { try archive.restore(into: fresh) { _, _ in throw Full() } }
+        #expect(fresh.allNodes().isEmpty)
     }
 }

@@ -52,6 +52,8 @@ public enum VaultExport {
 
     private static func yamlString(_ text: String) -> String {
         text.allSatisfy { $0.isLetter || $0.isNumber || "-_/".contains($0) }
-            ? text : "\"" + text.replacingOccurrences(of: "\"", with: "\\\"") + "\""
+            ? text
+            : "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n") + "\""
     }
 }

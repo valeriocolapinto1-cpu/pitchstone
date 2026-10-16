@@ -16,13 +16,14 @@ enum HealthBackup {
     static let iterations: UInt32 = 310_000
 
     enum BackupError: LocalizedError {
-        case wrongPassword, notABackup, shortPassword
+        case wrongPassword, notABackup, shortPassword, tooLarge
 
         var errorDescription: String? {
             switch self {
             case .wrongPassword: String(localized: "Password sbagliata, o file rovinato.")
             case .notABackup: String(localized: "Il file non è un backup dei dati di salute di Pitchstone.")
             case .shortPassword: String(localized: "Usa una password di almeno 8 caratteri.")
+            case .tooLarge: String(localized: "Gli allegati di salute sono troppi per un solo backup (oltre 300 MB): esportane qualcuno a parte e riprova.")
             }
         }
     }
@@ -45,8 +46,12 @@ enum HealthBackup {
         return SymmetricKey(data: derived)
     }
 
+    /// Il backup si cifra in memoria, tutto insieme: oltre questa soglia l'app rischia di chiudersi.
+    static let maxFileBytes = 300 * 1024 * 1024
+
     static func seal(_ archive: LocalArchive, password: String) throws -> Data {
         guard password.count >= 8 else { throw BackupError.shortPassword }
+        guard archive.files.values.reduce(0, { $0 + $1.count }) <= maxFileBytes else { throw BackupError.tooLarge }
         let salt = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
         let plain = try JSONEncoder().encode(archive)
         let box = try AES.GCM.seal(plain, using: key(password: password, salt: salt))
@@ -77,10 +82,12 @@ extension NotesModel {
     /// Ripristina un backup di salute: aggiunge ciò che manca, non tocca il resto.
     @discardableResult
     func restoreHealth(_ archive: LocalArchive) throws -> Int {
-        let added = try archive.restore(into: store) { [files] id, data in try files.write(data, for: id) }
-        reload()
-        if autoIndex { scheduleIndexing() }
-        return added
+        // Anche dopo un errore: quello che è stato salvato si vede.
+        defer {
+            reload()
+            if autoIndex { scheduleIndexing() }
+        }
+        return try archive.restore(into: store) { [files] id, data in try files.write(data, for: id) }
     }
 
     /// PDF leggibile di un nodo, dal suo Markdown.

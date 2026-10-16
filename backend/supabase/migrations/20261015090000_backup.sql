@@ -46,3 +46,17 @@ $$;
 
 revoke execute on function backup_snapshot() from public, anon, authenticated;
 grant execute on function backup_snapshot() to service_role;
+
+-- I backup restano 14 giorni e citano gli allegati: i loro file si cancellano dal bucket
+-- solo dopo, così un ripristino ritrova anche i PDF e le immagini.
+drop function storage_trash_list(integer);
+create function storage_trash_list(p_limit integer default 100, p_min_age interval default interval '15 days')
+returns jsonb language sql stable set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object('path', path, 'part_count', part_count) order by queued_at), '[]')
+  from (
+    select * from public.storage_trash where queued_at <= now() - p_min_age
+    order by queued_at limit greatest(1, least(p_limit, 500))
+  ) t;
+$$;
+revoke execute on function storage_trash_list(integer, interval) from public, anon, authenticated;
+grant execute on function storage_trash_list(integer, interval) to service_role;

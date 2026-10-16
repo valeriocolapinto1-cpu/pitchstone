@@ -104,6 +104,7 @@ export default {
   async scheduled(_controller, env, ctx): Promise<void> {
     if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) return;
     const supabase = { url: env.SUPABASE_URL, secretKey: env.SUPABASE_SECRET_KEY };
-    ctx.waitUntil(emptyStorageTrash(supabase).then(() => dailyBackup(supabase)));
+    // Il backup parte anche se la pulizia fallisce.
+    ctx.waitUntil(Promise.allSettled([emptyStorageTrash(supabase)]).then(() => dailyBackup(supabase)));
   },
 } satisfies ExportedHandler<Env>;
