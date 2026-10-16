@@ -5,67 +5,63 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pitchstone</title>
   <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
-  <meta name="theme-color" content="#1c1c1e">
-  <style>
-    :root { color-scheme: light dark; font-family: -apple-system, Segoe UI, sans-serif; }
-    body { margin: 0; display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
-    aside { border-right: 1px solid #8884; display: flex; flex-direction: column; }
-    aside header { display: flex; gap: 6px; padding: 8px; }
-    #search { flex: 1; }
-    #list { overflow: auto; flex: 1; margin: 0; padding: 0; list-style: none; }
-    #list li { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #8882; }
-    #list li.active { background: #8883; }
-    main { display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; }
-    #editor { display: flex; flex-direction: column; padding: 12px; gap: 8px; }
-    #body { flex: 1; font-family: Menlo, monospace; }
-    #preview { overflow: auto; padding: 12px 24px; border-left: 1px solid #8884; }
-    #status { font-size: 12px; padding: 8px; opacity: .7; }
-    #rejections { font-size: 12px; padding: 8px; border-top: 1px solid #8884; display: grid; gap: 6px; }
-    #rejections div { display: flex; gap: 6px; align-items: center; }
-    #rejections span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-    #blocked { position: fixed; inset: 0; display: grid; place-items: center; background: Canvas; padding: 24px; text-align: center; }
-    #blocked[hidden] { display: none; }
-    .wiki { text-decoration: underline; cursor: pointer; color: #0a84ff; }
-    #chat { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); box-sizing: border-box; background: Canvas; border-left: 1px solid #8884; display: flex; flex-direction: column; box-shadow: -4px 0 16px #0002; }
-    #chat[hidden] { display: none; }
-    #chat header { display: flex; gap: 6px; align-items: center; padding: 8px; border-bottom: 1px solid #8884; }
-    #chat header strong { flex: 1; }
-    #chat-settings { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px; font-size: 12px; border-bottom: 1px solid #8882; }
-    #chat-model { width: 9em; }
-    #chat-log { flex: 1; overflow: auto; padding: 8px 12px; display: grid; align-content: start; gap: 10px; }
-    #chat-log .msg { padding: 8px 10px; border-radius: 8px; overflow-wrap: anywhere; }
-    #chat-log .user { background: #0a84ff22; white-space: pre-wrap; }
-    #chat-log .assistant { background: #8881; }
-    #chat-log .assistant > :first-child { margin-top: 0; }
-    #chat-log .meta, #chat-log .sources { font-size: 11px; opacity: .75; margin-top: 6px; }
-    #chat-log .error { color: #d70015; }
-    #chat-form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #8884; }
-    #chat-input { flex: 1; resize: vertical; min-height: 3em; font: inherit; }
-  </style>
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#161618" media="(prefers-color-scheme: dark)">
 </head>
 <body>
   <aside>
-    <header><input id="search" placeholder="Cerca (⌘K)"><button id="new" title="Nuovo nodo (⌘N)">＋</button><button id="chat-toggle" title="Tutor sugli appunti (⌘J)">Tutor</button></header>
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <strong>Pitchstone</strong>
+      <button id="chat-toggle" class="ghost" title="Tutor sugli appunti (⌘J)">Tutor</button>
+      <button id="new" class="primary icon" title="Nuovo nodo (⌘N)" aria-label="Nuovo nodo">＋</button>
+    </div>
+    <label class="search"><input id="search" type="search" placeholder="Cerca negli appunti" aria-label="Cerca (⌘K)"></label>
+    <div id="count" class="count"></div>
     <ul id="list"></ul>
     <div id="rejections" hidden></div>
     <div id="status">Solo locale</div>
   </aside>
   <main>
-    <section id="editor" hidden>
-      <input id="title" placeholder="Titolo">
-      <div><select id="type"></select> <select id="area"></select> <input id="tags" placeholder="Tag, separati da virgole"> <button id="trash">Cestino</button></div>
-      <textarea id="body"></textarea>
+    <div id="empty">
+      <h2>Nessun nodo aperto</h2>
+      <p>Scegli un appunto dall'elenco o creane uno nuovo.</p>
+      <p class="hint"><kbd>⌘</kbd> <kbd>N</kbd> nuovo · <kbd>⌘</kbd> <kbd>K</kbd> cerca · <kbd>⌘</kbd> <kbd>J</kbd> tutor</p>
+    </div>
+    <section id="node" hidden>
+      <div class="toolbar">
+        <button id="back" class="ghost back" aria-label="Torna all'elenco">‹ Elenco</button>
+        <div class="segmented" role="group" aria-label="Vista">
+          <button data-mode="write">Scrivi</button>
+          <button data-mode="split">Affiancato</button>
+          <button data-mode="preview">Anteprima</button>
+        </div>
+        <span class="spacer"></span>
+        <button id="trash" class="ghost danger">Sposta nel cestino</button>
+      </div>
+      <div id="editor">
+        <div class="meta">
+          <span id="area-dot" aria-hidden="true"></span>
+          <select id="area" aria-label="Area"></select>
+          <select id="type" aria-label="Tipo"></select>
+          <input id="tags" placeholder="Tag, separati da virgole" aria-label="Tag">
+        </div>
+        <input id="title" placeholder="Titolo" aria-label="Titolo">
+      </div>
+      <div id="panes" class="panes" data-mode="split">
+        <textarea id="body" placeholder="Scrivi in Markdown. [[Titolo]] collega un altro nodo." aria-label="Testo"></textarea>
+        <article id="preview"></article>
+      </div>
     </section>
-    <article id="preview"></article>
   </main>
   <section id="chat" hidden aria-label="Tutor">
-    <header><strong>Tutor</strong><button id="chat-new">Nuova chat</button><button id="chat-close" title="Chiudi">✕</button></header>
+    <header><strong>Tutor</strong><button id="chat-new" class="ghost">Nuova chat</button><button id="chat-close" class="ghost icon" title="Chiudi" aria-label="Chiudi">✕</button></header>
     <div id="chat-settings">
       <label>Modello locale <input id="chat-model" placeholder="llama3.2" spellcheck="false"></label>
       <label><input type="checkbox" id="chat-local-only"> Solo locale (mai Gemini)</label>
     </div>
     <div id="chat-log"></div>
-    <form id="chat-form"><textarea id="chat-input" placeholder="Chiedi qualcosa sui tuoi appunti" rows="2"></textarea><button id="chat-send">Invia</button></form>
+    <form id="chat-form"><textarea id="chat-input" placeholder="Chiedi qualcosa sui tuoi appunti" rows="2"></textarea><button id="chat-send" class="primary">Invia</button></form>
   </section>
   <div id="blocked" hidden>Pitchstone è già aperto in un'altra scheda: chiudila per continuare qui.</div>
   <script type="module" src="/src/main.ts"></script>
