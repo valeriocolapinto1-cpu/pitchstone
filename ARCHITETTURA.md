@@ -36,7 +36,7 @@ Fuori ambito nella prima versione: audio e trascrizione, condivisione, multiuten
 | Esportazione | Markdown e PDF in qualsiasi momento. |
 | Offline | Lettura e scrittura complete. Sync automatico in background quando torna la connessione. |
 | Accessibilità | Dimensione testo, contrasto elevato. Feedback aptico leggero, nessun suono. Tema scuro. |
-| Scorciatoie | Cmd+K cerca, Cmd+N nuovo nodo, Cmd+R ripasso, Cmd+/ chat. |
+| Scorciatoie | Cmd+F cerca (Cmd+K resta ai link dell'editor, ADR 0014), Cmd+N nuovo nodo, Cmd+R ripasso, Cmd+/ chat. |
 
 ---
 

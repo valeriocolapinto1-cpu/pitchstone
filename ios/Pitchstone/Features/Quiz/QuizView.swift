@@ -102,9 +102,12 @@ struct QuizView: View {
     private func stat(_ value: String, _ label: LocalizedStringKey, _ symbol: String, _ tint: Color) -> some View {
         VStack(spacing: 4) {
             Image(systemName: symbol).foregroundStyle(tint).font(.title2)
+                .accessibilityHidden(true)
             Text(value).font(.title.bold()).monospacedDigit()
             Text(label).font(.caption).foregroundStyle(.secondary)
         }
+        // Letto come "12, quiz da ripassare" invece di tre elementi separati.
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -161,8 +164,10 @@ private struct QuizCard: View {
                         Spacer()
                         if grade != nil, optionKey(option) == optionKey(quiz.answer) {
                             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                .accessibilityLabel(Text("Risposta giusta"))
                         } else if grade != nil, option == chosen {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                                .accessibilityLabel(Text("La tua risposta, sbagliata"))
                         }
                     }
                     .padding()

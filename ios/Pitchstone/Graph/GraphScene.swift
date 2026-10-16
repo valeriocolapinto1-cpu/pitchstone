@@ -38,6 +38,10 @@ final class GraphScene: SKScene, UIGestureRecognizerDelegate {
     private weak var pencilRecognizer: UIGestureRecognizer?
     private var clusterLabels: [SKLabelNode] = []
     private var linkStart: Int?
+    /// Tema, contrasto e dimensione del testo della vista (vedi `applyAppearance`).
+    /// Nil finché SwiftUI non li passa: si usano i colori dinamici così come sono.
+    private var traits: UITraitCollection?
+    private var labelFontSize: CGFloat = 12
 
     private static let maxLabels = 150
     private static let dotTexture: SKTexture = {
@@ -99,7 +103,7 @@ final class GraphScene: SKScene, UIGestureRecognizerDelegate {
         // i dati nuovi per etichette e ricerca, senza ricostruire migliaia di sprite.
         if graph.structureKey == self.graph.structureKey, positions == self.positions, !sprites.isEmpty {
             self.graph = graph
-            for (i, node) in graph.nodes.enumerated() { sprites[i].color = node.graphColor }
+            for (i, node) in graph.nodes.enumerated() { sprites[i].color = resolved(node.graphColor) }
             for (i, label) in labelsByNode { label.text = Self.title(graph.nodes[i]) }
             updateLabels()
             return
@@ -114,7 +118,7 @@ final class GraphScene: SKScene, UIGestureRecognizerDelegate {
             let sprite = SKSpriteNode(texture: Self.dotTexture)
             let diameter = 10 + 3 * min(Double(node.degree), 10).squareRoot() * 2
             sprite.size = CGSize(width: diameter, height: diameter)
-            sprite.color = node.graphColor
+            sprite.color = resolved(node.graphColor)
             sprite.colorBlendFactor = 1
             sprite.position = positions[i]
             nodesLayer.addChild(sprite)
@@ -152,17 +156,18 @@ final class GraphScene: SKScene, UIGestureRecognizerDelegate {
                 return (dx * dx + dy * dy).squareRoot()
             }.sorted()
             let radius = max(distances[Int(Double(distances.count - 1) * 0.85)], 40) + 30
+            let color = resolved(area.graphColor)
             let bubble = SKShapeNode(circleOfRadius: radius)
             bubble.position = CGPoint(x: cx, y: cy)
-            bubble.fillColor = area.graphColor.withAlphaComponent(0.10)
-            bubble.strokeColor = area.graphColor.withAlphaComponent(0.35)
+            bubble.fillColor = color.withAlphaComponent(highContrast ? 0.18 : 0.10)
+            bubble.strokeColor = color.withAlphaComponent(highContrast ? 0.8 : 0.35)
             bubble.lineWidth = 2
             clustersLayer.addChild(bubble)
 
             let label = SKLabelNode(text: "\(area.graphName) · \(members.count)")
             label.fontName = "HelveticaNeue-Bold"
-            label.fontSize = 20
-            label.fontColor = area.graphColor
+            label.fontSize = labelFontSize * 20 / 12
+            label.fontColor = color
             label.verticalAlignmentMode = .center
             label.position = CGPoint(x: cx, y: cy)
             label.zPosition = 4
@@ -281,11 +286,37 @@ final class GraphScene: SKScene, UIGestureRecognizerDelegate {
     private func makeLabel() -> SKLabelNode {
         let label = SKLabelNode()
         label.fontName = "HelveticaNeue"
-        label.fontSize = 12
-        label.fontColor = .label
+        label.fontSize = labelFontSize
+        label.fontColor = resolved(.label)
         label.verticalAlignmentMode = .top
         labelsLayer.addChild(label)
         return label
+    }
+
+    // MARK: Aspetto
+
+    private var highContrast: Bool { traits?.accessibilityContrast == .high }
+
+    private func resolved(_ color: UIColor) -> UIColor {
+        traits.map { color.resolvedColor(with: $0) } ?? color
+    }
+
+    /// Tema scuro, contrasto elevato e dimensione del testo. SpriteKit non segue da solo
+    /// i colori dinamici di UIKit: si risolvono qui e si riapplicano a ogni cambio.
+    func applyAppearance(_ traits: UITraitCollection) {
+        self.traits = traits
+        // Etichette con la dimensione del testo scelta, entro un limite che tiene leggibile il grafo.
+        labelFontSize = min(UIFontMetrics(forTextStyle: .caption1).scaledValue(for: 12, compatibleWith: traits), 24)
+        backgroundColor = resolved(.systemBackground)
+        edgesNode.strokeColor = resolved(.secondaryLabel).withAlphaComponent(highContrast ? 0.7 : 0.35)
+        linkLine.strokeColor = resolved(.systemPink)
+        for (i, sprite) in sprites.enumerated() { sprite.color = resolved(graph.nodes[i].graphColor) }
+        for label in Array(labelsByNode.values) + freeLabels {
+            label.fontSize = labelFontSize
+            label.fontColor = resolved(.label)
+        }
+        if !positions.isEmpty { buildClusters() }
+        applyCamera()
     }
 
     private func releaseAllLabels() {

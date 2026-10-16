@@ -6,6 +6,11 @@ import UniformTypeIdentifiers
 /// Elenco dei nodi a sinistra, nodo aperto a destra.
 struct RootView: View {
     @Environment(NotesModel.self) private var notes
+    @Environment(CommandCenter.self) private var commands
+    @AppStorage(OnboardingPolicy.storageKey) private var onboardingCompleted = false
+    @State private var showingOnboarding = false
+    @State private var columns = NavigationSplitViewVisibility.automatic
+    @State private var searching = false
     @State private var selection: UUID?
     @State private var showingTrash = false
     @State private var showingSettings = false
@@ -39,13 +44,13 @@ struct RootView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             NodeListView(selection: Binding(get: { selection }, set: { value in
                 selection = value
                 chatNodeID = value
                 // Scegliere un nodo dall'elenco riporta alla nota.
                 if value != nil { showingGraph = false }
-            }))
+            }), searching: $searching)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Picker("Vista", selection: $showingGraph) {
@@ -151,19 +156,19 @@ struct RootView: View {
         .fullScreenCover(item: $reader) { request in
             AttachmentReaderView(attachment: request.attachment, initialPage: request.page)
         }
-        .background {
-            // ⌘G passa dall'elenco al grafo e viceversa.
-            Button("Grafo") { showingGraph.toggle() }
-                .keyboardShortcut("g", modifiers: .command)
-                .hidden()
-            // ⌘R apre il ripasso.
-            Button("Ripasso") { showingQuiz = true }
-                .keyboardShortcut("r", modifiers: .command)
-                .hidden()
-            // ⌘/ apre e chiude la chat.
-            Button("Chat") { toggleChat(nil) }
-                .keyboardShortcut("/", modifiers: .command)
-                .hidden()
+        // Scorciatoie da tastiera: arrivano dai comandi della scena (AppShortcuts.swift).
+        .onChange(of: commands.request) { _, request in
+            if let request { perform(request.shortcut) }
+        }
+        .onAppear {
+            showingOnboarding = OnboardingPolicy.shouldShow(
+                completed: onboardingCompleted, arguments: ProcessInfo.processInfo.arguments)
+        }
+        .fullScreenCover(isPresented: $showingOnboarding) {
+            OnboardingView {
+                onboardingCompleted = true
+                showingOnboarding = false
+            }
         }
         .sheet(isPresented: $showingQuiz) {
             QuizView()
@@ -177,7 +182,10 @@ struct RootView: View {
         .sheet(isPresented: $showingTrash) {
             TrashView()
         }
-        .sheet(isPresented: $showingSettings) {
+        .sheet(isPresented: $showingSettings, onDismiss: {
+            // "Rivedi la presentazione" nelle Impostazioni: si apre a foglio chiuso.
+            if !onboardingCompleted { showingOnboarding = true }
+        }) {
             SettingsView()
         }
         .sheet(isPresented: $showingImport) {
@@ -213,6 +221,39 @@ struct RootView: View {
 }
 
 extension RootView {
+    /// Un foglio aperto sopra la finestra: le scorciatoie globali aspettano che si chiuda,
+    /// perché un foglio non può presentarne un altro.
+    private var presentingModal: Bool {
+        showingOnboarding || graphOpen != nil || reader != nil || showingQuiz || showingExams || showingBackup
+            || showingTrash || showingSettings || showingImport || importingDocuments
+    }
+
+    private func perform(_ shortcut: AppShortcut) {
+        guard !presentingModal else { return }
+        switch shortcut {
+        case .newNode:
+            let id = notes.createNode(type: .concept, area: .studio).id
+            showingGraph = false
+            selection = id
+            chatNodeID = id
+        case .search:
+            if showingGraph {
+                graphState.requestSearchFocus()
+            } else {
+                columns = .all
+                searching = true
+            }
+        case .toggleGraph:
+            showingGraph.toggle()
+        case .chat:
+            toggleChat(nil)
+        case .review:
+            showingQuiz = true
+        case .settings:
+            showingSettings = true
+        }
+    }
+
     /// `nodeID` apre la chat di quel nodo; nil apre la chat generale o la chiude.
     private func toggleChat(_ nodeID: UUID?, forceOpen: Bool = false) {
         if let nodeID {

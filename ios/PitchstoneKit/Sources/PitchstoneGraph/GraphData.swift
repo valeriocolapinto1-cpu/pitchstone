@@ -56,6 +56,22 @@ public struct GraphData: Sendable, Equatable {
 
     public var isEmpty: Bool { nodes.isEmpty }
 
+    /// Vicini di ogni nodo, nell'ordine di `nodes`: prima i più collegati, poi per titolo.
+    /// Serve all'elenco accessibile del grafo, dove ogni nodo dice a chi è collegato.
+    public func neighbors() -> [[Int]] {
+        var result = [[Int]](repeating: [], count: nodes.count)
+        for edge in edges {
+            result[edge.source].append(edge.target)
+            result[edge.target].append(edge.source)
+        }
+        return result.map { list in
+            list.sorted { a, b in
+                if nodes[a].degree != nodes[b].degree { return nodes[a].degree > nodes[b].degree }
+                return nodes[a].title.localizedStandardCompare(nodes[b].title) == .orderedAscending
+            }
+        }
+    }
+
     /// Firma della struttura: cambia se cambiano nodi, aree o archi, non se cambia un testo.
     /// Serve a decidere quando ricalcolare il layout.
     public var structureKey: Int {

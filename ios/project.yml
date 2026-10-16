@@ -63,6 +63,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.pitchstone.ipad
         TARGETED_DEVICE_FAMILY: "2"
         SUPPORTS_MACCATALYST: NO
+        # Icona unica 1024×1024 in Resources/Assets.xcassets: Xcode ricava le altre dimensioni.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Foundation Models esiste da iOS 26: su iOS 18 l'app parte senza modello locale.
         OTHER_LDFLAGS: ["$(inherited)", "-weak_framework", "FoundationModels"]
   PitchstoneTests:

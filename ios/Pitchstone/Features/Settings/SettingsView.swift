@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var clientID = ""
     @State private var clientSecret = ""
     @State private var chatUsesGemini = true
+    @AppStorage(OnboardingPolicy.storageKey) private var onboardingCompleted = false
 
     var body: some View {
         NavigationStack {
@@ -55,6 +56,27 @@ struct SettingsView: View {
                     Text("Chat")
                 } footer: {
                     Text("Gemini passa dal Worker e riceve solo i frammenti degli appunti pertinenti, mai i dati di salute. Offline, o se Gemini non risponde, la chat usa il modello sul dispositivo.")
+                }
+                Section {
+                    ForEach(AppShortcut.allCases) { shortcut in
+                        LabeledContent {
+                            Text(shortcut.display)
+                                .monospaced()
+                        } label: {
+                            Label(shortcut.title, systemImage: shortcut.symbol)
+                        }
+                    }
+                } header: {
+                    Text("Scorciatoie da tastiera")
+                } footer: {
+                    Text("Con una tastiera esterna, tieni premuto ⌘ per vederle tutte.")
+                }
+                Section {
+                    Button("Rivedi la presentazione") {
+                        // La presentazione si apre appena questo foglio è chiuso (RootView).
+                        onboardingCompleted = false
+                        dismiss()
+                    }
                 }
             }
             .navigationTitle("Impostazioni")

@@ -10,6 +10,8 @@ struct InkPagesView: View {
     @State private var selectedPage: UUID?
     @State private var confirmingDelete = false
     @AppStorage("fingerDraws") private var fingerDraws = false
+    /// Annulla e ripristina della pagina aperta.
+    @State private var history = InkHistory()
 
     var body: some View {
         let pages = notes.inkPages(of: nodeID)
@@ -17,7 +19,7 @@ struct InkPagesView: View {
             toolbar(pages)
             Divider()
             if let page = pages.first(where: { $0.id == selectedPage }) ?? pages.first {
-                InkPageView(page: page, fingerDraws: fingerDraws) { moved in
+                InkPageView(page: page, fingerDraws: fingerDraws, history: history) { moved in
                     // I tratti sono finiti in una nuova pagina (conflitto con una sync): la si apre.
                     selectedPage = moved
                 }
@@ -70,6 +72,16 @@ struct InkPagesView: View {
                 }
             }
             Spacer()
+            if current != nil {
+                Button { history.undo() } label: {
+                    Label("Annulla", systemImage: "arrow.uturn.backward")
+                }
+                .disabled(!history.canUndo)
+                Button { history.redo() } label: {
+                    Label("Ripristina", systemImage: "arrow.uturn.forward")
+                }
+                .disabled(!history.canRedo)
+            }
             Toggle(isOn: $fingerDraws) {
                 Label("Disegna con il dito", systemImage: "hand.draw")
             }
@@ -86,7 +98,7 @@ struct InkPagesView: View {
                         }
                     }
                 } label: {
-                    Label("Pagine eliminate", systemImage: "arrow.uturn.backward")
+                    Label("Pagine eliminate", systemImage: "arrow.uturn.backward.circle")
                 }
             }
             if current != nil {
@@ -127,6 +139,7 @@ private struct InkPageView: View {
     @Environment(\.scenePhase) private var scenePhase
     let page: InkPageRecord
     let fingerDraws: Bool
+    let history: InkHistory
     let onMoved: (UUID) -> Void
 
     /// Disegno decodificato una volta sola, non a ogni tratto.
@@ -141,7 +154,7 @@ private struct InkPageView: View {
     var body: some View {
         Group {
             if let initial {
-                InkCanvas(initialDrawing: initial, background: page.background, fingerDraws: fingerDraws) { drawing in
+                InkCanvas(initialDrawing: initial, background: page.background, fingerDraws: fingerDraws, history: history) { drawing in
                     pending = drawing
                     edits += 1
                 }

@@ -1,18 +1,47 @@
+import Observation
 import PencilKit
 import PitchstoneSync
 import SwiftUI
 import UIKit
 
-/// Tela PencilKit con la palette di sistema: penna, evidenziatore, gomma, lazo, righello.
+/// Annulla e ripristina della tela, per i pulsanti sopra la pagina. ⌘Z e ⇧⌘Z funzionano
+/// già da tastiera: la tela è il primo responder e usa lo stesso undo manager.
+@MainActor
+@Observable
+final class InkHistory {
+    @ObservationIgnored fileprivate weak var canvas: PKCanvasView?
+    private(set) var canUndo = false
+    private(set) var canRedo = false
+
+    func undo() {
+        canvas?.undoManager?.undo()
+        refresh()
+    }
+
+    func redo() {
+        canvas?.undoManager?.redo()
+        refresh()
+    }
+
+    func refresh() {
+        canUndo = canvas?.undoManager?.canUndo ?? false
+        canRedo = canvas?.undoManager?.canRedo ?? false
+    }
+}
+
+/// Tela PencilKit con la palette di sistema: penna, evidenziatore, gomma, lazo, righello,
+/// forme (tenendo fermo il tratto) e colori. La palette gestisce anche il doppio tocco e la
+/// pressione della Pencil secondo le Impostazioni di sistema (per esempio gomma ↔ penna).
 /// La pagina ha proporzioni A4 e scorre in verticale; lo sfondo scorre con i tratti.
 struct InkCanvas: UIViewRepresentable {
     let initialDrawing: PKDrawing
     let background: InkBackground
     /// Con la Pencil collegata il dito scorre la pagina; qui si può far disegnare anche il dito.
     let fingerDraws: Bool
+    let history: InkHistory
     let onChange: (PKDrawing) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange) }
+    func makeCoordinator() -> Coordinator { Coordinator(onChange: onChange, history: history) }
 
     func makeUIView(context: Context) -> PageCanvasView {
         let canvas = PageCanvasView()
@@ -29,7 +58,11 @@ struct InkCanvas: UIViewRepresentable {
         picker.addObserver(canvas)
         picker.setVisible(true, forFirstResponder: canvas)
         context.coordinator.toolPicker = picker
-        DispatchQueue.main.async { canvas.becomeFirstResponder() }
+        history.canvas = canvas
+        DispatchQueue.main.async {
+            canvas.becomeFirstResponder()
+            history.refresh()
+        }
         return canvas
     }
 
@@ -50,13 +83,17 @@ struct InkCanvas: UIViewRepresentable {
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         var onChange: (PKDrawing) -> Void
         var toolPicker: PKToolPicker?
+        let history: InkHistory
 
-        init(onChange: @escaping (PKDrawing) -> Void) {
+        init(onChange: @escaping (PKDrawing) -> Void, history: InkHistory) {
             self.onChange = onChange
+            self.history = history
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             onChange(canvasView.drawing)
+            // L'azione di annullamento si registra a fine tratto: lo stato si legge subito dopo.
+            Task { @MainActor [history] in history.refresh() }
         }
     }
 }

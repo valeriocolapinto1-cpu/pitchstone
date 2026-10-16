@@ -35,6 +35,7 @@
 		756D6A9F0D07892B229E0F58 /* PitchstoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5053F071475E3BAABF2B3372 /* PitchstoneApp.swift */; };
 		7FA4AEC5E1E278C4CBB1CDA0 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545EF4415C02A3C61EBACB1E /* MarkdownText.swift */; };
 		8313C93D5B1756560CCF80E3 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EEFD0A781A8FE61C0EADE5C /* RootView.swift */; };
+		862C89233E46B468A035148D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 91A6C46E7DF609E065A5D20E /* Assets.xcassets */; };
 		8C4D1CC8538626DECFDCC8DF /* BackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC2CFCB2A1CB0B2F666466D /* BackupView.swift */; };
 		934B0A1693FEA63ECA3AEA62 /* NotesModel+Chat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0089921CB5F63FDA52FA3D87 /* NotesModel+Chat.swift */; };
 		A3437F1DE4668C892B477028 /* DemoData.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8C95B9A27C96E56EFD107F4 /* DemoData.swift */; };
@@ -54,10 +55,14 @@
 		D4EE802CD51B35C7CE5D2C83 /* PitchstoneStore in Frameworks */ = {isa = PBXBuildFile; productRef = 47F76884D4D4BA64718B775D /* PitchstoneStore */; };
 		DB589411DBF6DF7C1CC6FBFD /* AttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEACE84982692F0A65FE5C35 /* AttachmentTests.swift */; };
 		DDCB9D912EA7AC7E43A0EAEB /* ChatModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E010B49BE7105483DEE92981 /* ChatModelTests.swift */; };
+		DF9145DC359CE8494506747E /* AppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F1529E0DD4069D90547F2AE /* AppShortcuts.swift */; };
+		E11D33CC1A23DC26050BEF85 /* GraphListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B44281F1F3BDF95EAFB3704B /* GraphListView.swift */; };
 		E19B701B71CC48421F4BCDEA /* InkPagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B1DDBD773FCC5998DD8B7D /* InkPagesView.swift */; };
 		E1E4C165AFB71DC13B8B3B7B /* ChatEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F3E430ACDD3EBDF1325B8B4 /* ChatEnvironment.swift */; };
 		E4CD22D63B0C65D5854DCA74 /* GraphScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE95C1DD03B4B6D8E647AA76 /* GraphScreen.swift */; };
 		EDDDD2949939E5FC8E89FBEC /* PitchstoneAI in Frameworks */ = {isa = PBXBuildFile; productRef = 4C97B6BCA2C660728799EF2B /* PitchstoneAI */; };
+		EE3B5DA36CDC9C7236407763 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB70AD159AB5F78E181F134E /* OnboardingView.swift */; };
+		EFBE847B6B55A96F14F136E1 /* AccessibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 953EA9AF0CF2D8D88B367ED4 /* AccessibilityTests.swift */; };
 		F5B1E9E1F63FD78E067593DB /* InkCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C877DDF60C53D22E75F3F36 /* InkCanvas.swift */; };
 		FE6E7A1057CFE4881F60C15E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB92DF951CEC6CAD7F558CBE /* ChatView.swift */; };
 /* End PBXBuildFile section */
@@ -97,6 +102,7 @@
 		5063242B8E5DAC1D20E289E4 /* ChatModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModel.swift; sourceTree = "<group>"; };
 		545EF4415C02A3C61EBACB1E /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		5DC13AAF186E119327AAACAF /* Backup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Backup.swift; sourceTree = "<group>"; };
+		5F1529E0DD4069D90547F2AE /* AppShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShortcuts.swift; sourceTree = "<group>"; };
 		5F73A6019910145776AECFFD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		64E43A01FC68B3996D00EB30 /* NotesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesModel.swift; sourceTree = "<group>"; };
 		696FD70B31A1B039AD0E0331 /* AnalysisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisTests.swift; sourceTree = "<group>"; };
@@ -108,10 +114,13 @@
 		8E104C4FC79864698C3D1121 /* LocalLanguageModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLanguageModel.swift; sourceTree = "<group>"; };
 		907A7B8B7E3BE6255A015B38 /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
 		91A47EB5ED2D84B60BDBAC7B /* ExamCalendarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExamCalendarView.swift; sourceTree = "<group>"; };
+		91A6C46E7DF609E065A5D20E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		953EA9AF0CF2D8D88B367ED4 /* AccessibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTests.swift; sourceTree = "<group>"; };
 		95B1DDBD773FCC5998DD8B7D /* InkPagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkPagesView.swift; sourceTree = "<group>"; };
 		9B9678BEF2C1BAC5B4E3B315 /* GraphState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphState.swift; sourceTree = "<group>"; };
 		A310FD3F6F219C0D1B155DEA /* InkCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkCodecTests.swift; sourceTree = "<group>"; };
 		AAD5F924B564203FF98F061E /* NotesModel+Analysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NotesModel+Analysis.swift"; sourceTree = "<group>"; };
+		B44281F1F3BDF95EAFB3704B /* GraphListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphListView.swift; sourceTree = "<group>"; };
 		B9324011BCB2C5A2F3594F5F /* PitchstoneTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PitchstoneTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C4D29BF41DE0AFA61D0A204A /* ImportVaultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportVaultView.swift; sourceTree = "<group>"; };
 		C71215F5F914D3A67A905227 /* TextExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextExtractor.swift; sourceTree = "<group>"; };
@@ -130,6 +139,7 @@
 		EB92DF951CEC6CAD7F558CBE /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		EE95C1DD03B4B6D8E647AA76 /* GraphScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphScreen.swift; sourceTree = "<group>"; };
 		F582C216275EDDCE5C364B30 /* StudyModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyModel.swift; sourceTree = "<group>"; };
+		FB70AD159AB5F78E181F134E /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		FBAD4B310379A8A7B5233FF6 /* PitchstoneUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PitchstoneUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -170,6 +180,7 @@
 		130D7B924A14D0AE54E71CCC /* App */ = {
 			isa = PBXGroup;
 			children = (
+				5F1529E0DD4069D90547F2AE /* AppShortcuts.swift */,
 				5053F071475E3BAABF2B3372 /* PitchstoneApp.swift */,
 			);
 			path = App;
@@ -218,6 +229,7 @@
 				CF7EF3EC7C2EC695288B20B6 /* Import */,
 				51B9E606B92C849EC8DD3C5D /* Ink */,
 				3E3649A947C5C475CC26EDF5 /* Notes */,
+				62E69379CA3770BA747EED32 /* Onboarding */,
 				F8A27E62E14EE696B68EF209 /* Quiz */,
 				AE14BA972FFFE348FA2108D1 /* Settings */,
 			);
@@ -231,6 +243,14 @@
 				95B1DDBD773FCC5998DD8B7D /* InkPagesView.swift */,
 			);
 			path = Ink;
+			sourceTree = "<group>";
+		};
+		62E69379CA3770BA747EED32 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				FB70AD159AB5F78E181F134E /* OnboardingView.swift */,
+			);
+			path = Onboarding;
 			sourceTree = "<group>";
 		};
 		6435B4BA27FEFB13673BA598 /* Core */ = {
@@ -256,6 +276,7 @@
 		774BF2CC2066F3E63A650CA4 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				91A6C46E7DF609E065A5D20E /* Assets.xcassets */,
 				5F73A6019910145776AECFFD /* Info.plist */,
 			);
 			path = Resources;
@@ -264,6 +285,7 @@
 		82A44CE26D713EDF694E4F25 /* Graph */ = {
 			isa = PBXGroup;
 			children = (
+				B44281F1F3BDF95EAFB3704B /* GraphListView.swift */,
 				E48B301A817A9658EB60133B /* GraphScene.swift */,
 				EE95C1DD03B4B6D8E647AA76 /* GraphScreen.swift */,
 				9B9678BEF2C1BAC5B4E3B315 /* GraphState.swift */,
@@ -338,6 +360,7 @@
 		C8630335A702260D6C8E2EC0 /* PitchstoneTests */ = {
 			isa = PBXGroup;
 			children = (
+				953EA9AF0CF2D8D88B367ED4 /* AccessibilityTests.swift */,
 				696FD70B31A1B039AD0E0331 /* AnalysisTests.swift */,
 				DEACE84982692F0A65FE5C35 /* AttachmentTests.swift */,
 				1266D7FDB8789770F4CF679D /* BackupTests.swift */,
@@ -428,6 +451,7 @@
 			buildConfigurationList = 21B578C0B4898BD1373AE913 /* Build configuration list for PBXNativeTarget "Pitchstone" */;
 			buildPhases = (
 				B2A117DA6EC654A34AEA3688 /* Sources */,
+				CCA435E5E97C1796E35FE492 /* Resources */,
 				513E12677715700B0035DB44 /* Frameworks */,
 			);
 			buildRules = (
@@ -493,11 +517,23 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		CCA435E5E97C1796E35FE492 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				862C89233E46B468A035148D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		31B0C9B3A16CB4EE187AF703 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EFBE847B6B55A96F14F136E1 /* AccessibilityTests.swift in Sources */,
 				6D7B6127A6A025FA51946A00 /* AnalysisTests.swift in Sources */,
 				DB589411DBF6DF7C1CC6FBFD /* AttachmentTests.swift in Sources */,
 				4E05F98672E75BFDFF403D98 /* BackupTests.swift in Sources */,
@@ -524,6 +560,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				059F63F52687636A6576FB65 /* AnalysisViews.swift in Sources */,
+				DF9145DC359CE8494506747E /* AppShortcuts.swift in Sources */,
 				C4115D4BD5F8373BE24C9D79 /* AttachmentReaderView.swift in Sources */,
 				44CC0F167FDECBC6380FAE78 /* AttachmentsView.swift in Sources */,
 				A3AD7E5DEB0FDEEB07D0E255 /* Backup.swift in Sources */,
@@ -533,6 +570,7 @@
 				FE6E7A1057CFE4881F60C15E /* ChatView.swift in Sources */,
 				A3437F1DE4668C892B477028 /* DemoData.swift in Sources */,
 				3EE279A94C3246A8CD9F46DE /* ExamCalendarView.swift in Sources */,
+				E11D33CC1A23DC26050BEF85 /* GraphListView.swift in Sources */,
 				4014147E3DC2C57FA5541B9D /* GraphScene.swift in Sources */,
 				E4CD22D63B0C65D5854DCA74 /* GraphScreen.swift in Sources */,
 				2025A527BF842129787F865B /* GraphState.swift in Sources */,
@@ -551,6 +589,7 @@
 				934B0A1693FEA63ECA3AEA62 /* NotesModel+Chat.swift in Sources */,
 				BF1EBE4E0AA2C022AF8C4523 /* NotesModel+TextIndex.swift in Sources */,
 				6939EE790E13E16BA70F0D5B /* NotesModel.swift in Sources */,
+				EE3B5DA36CDC9C7236407763 /* OnboardingView.swift in Sources */,
 				756D6A9F0D07892B229E0F58 /* PitchstoneApp.swift in Sources */,
 				5F78FAD820275DD751BE2DDE /* QuizView.swift in Sources */,
 				8313C93D5B1756560CCF80E3 /* RootView.swift in Sources */,
