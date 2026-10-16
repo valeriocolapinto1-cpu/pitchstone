@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: main
-Commit: f560fff146a08e434e51d6106b14e974ff2fb245
+Branch: fase-7-quiz
+Commit: eacd4e52e0dc2bc90a080cbca3b9d31571fc248b
