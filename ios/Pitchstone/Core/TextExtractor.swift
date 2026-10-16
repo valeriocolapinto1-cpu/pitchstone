@@ -39,8 +39,9 @@ enum TextExtractor {
     }
 
     /// Scrittura a mano: il disegno si rende in nero su bianco e passa dall'OCR.
+    /// PSINK1 (anche dal PC) o PKDrawing, in coordinate di pagina.
     static func handwriting(_ data: Data) -> String {
-        guard let drawing = try? PKDrawing(data: data), !drawing.strokes.isEmpty else { return "" }
+        guard let drawing = try? InkPortable.load(data, canvasWidth: 0).drawing, !drawing.strokes.isEmpty else { return "" }
         let bounds = drawing.bounds.insetBy(dx: -24, dy: -24)
         guard bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 else { return "" }
         // Tema chiaro: l'inchiostro "colore etichetta" diventa nero.

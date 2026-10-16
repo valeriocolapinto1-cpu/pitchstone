@@ -4,6 +4,7 @@ import {
   answer, type ChatMessage, corpus, DEFAULT_OLLAMA_MODEL, linkCitations, loadSettings, nodeFromLink,
   OllamaProvider, saveSettings, WorkerProvider,
 } from "./chat";
+import { InkEditor } from "./inkEditor";
 import { AREAS, LABELS, NODE_TYPES, type NodeRecord, titleKey } from "./model";
 import { Repository } from "./repository";
 import { IndexedDBStore } from "./store";
@@ -17,6 +18,7 @@ localStorage.setItem("deviceId", deviceId);
 const repo = new Repository(store, deviceId);
 const sync = new SyncClient(store, new HttpTransport(), deviceId);
 let selected: string | undefined;
+const ink = new InkEditor(repo, () => persist());
 
 function active(): NodeRecord[] {
   return store.nodes().filter((n) => !n.deleted_at).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
@@ -79,13 +81,17 @@ function updateAreaDot() {
   $("area-dot").style.background = `var(--${$<HTMLSelectElement>("area").value})`;
 }
 
-type Mode = "write" | "split" | "preview";
-function setMode(mode: Mode) {
-  $("panes").dataset.mode = mode;
-  for (const b of document.querySelectorAll<HTMLButtonElement>(".segmented button")) {
-    b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+const MODES = ["write", "split", "preview", "ink"] as const;
+type Mode = (typeof MODES)[number];
+function mode(): Mode { return $("panes").dataset.mode as Mode; }
+function setMode(next: Mode) {
+  if (next !== "ink") ink.flush();
+  $("panes").dataset.mode = next;
+  for (const b of document.querySelectorAll<HTMLButtonElement>("#view-mode button")) {
+    b.setAttribute("aria-pressed", String(b.dataset.mode === next));
   }
-  try { localStorage.setItem("viewMode", mode); } catch { /* solo una preferenza */ }
+  if (next === "ink" && selected) ink.show(selected);
+  try { localStorage.setItem("viewMode", next); } catch { /* solo una preferenza */ }
 }
 
 function renderPreview(node: NodeRecord) {
@@ -113,6 +119,7 @@ function open(id: string) {
   $<HTMLTextAreaElement>("body").value = node.body_md;
   updateAreaDot();
   renderPreview(node);
+  if (mode() === "ink") ink.show(id);
   renderList();
 }
 
@@ -125,8 +132,9 @@ function scheduleSave() {
   saveTimer = window.setTimeout(flushSave, 600);
 }
 
-/** Salva subito la modifica in attesa: prima di cambiare nodo, del cestino e della sync. */
+/** Salva subito la modifica in attesa (testo e penna): prima di cambiare nodo, del cestino e della sync. */
 function flushSave() {
+  ink.flush();
   clearTimeout(saveTimer);
   saveTimer = undefined;
   const id = saveId;
@@ -156,7 +164,7 @@ function renderRejections() {
   box.replaceChildren(...sync.rejections.map((p) => {
     const row = document.createElement("div");
     const label = document.createElement("span");
-    const name = p.entity === "node" ? store.node(p.id)?.title || "Senza titolo" : "Collegamento";
+    const name = p.entity === "node" ? store.node(p.id)?.title || "Senza titolo" : p.entity === "ink_page" ? "Pagina a penna" : "Collegamento";
     label.textContent = `${name}: ${p.rejection}`;
     const button = (text: string, action: () => void) => {
       const b = document.createElement("button");
@@ -209,6 +217,8 @@ async function runSync() {
   renderList();
   if (selected && !store.node(selected)) closeEditor();
   else if (selected && !editing()) open(selected);
+  // La penna si aggiorna anche mentre la si usa: i tratti non salvati restano.
+  else if (selected && mode() === "ink") ink.show(selected);
 }
 
 // MARK: Tutor
@@ -347,12 +357,13 @@ async function main() {
   for (const id of ["title", "type", "area", "tags", "body"]) $(id).addEventListener("input", scheduleSave);
   $("search").addEventListener("input", renderList);
   $("area").addEventListener("change", updateAreaDot);
-  for (const b of document.querySelectorAll<HTMLButtonElement>(".segmented button")) {
+  for (const b of document.querySelectorAll<HTMLButtonElement>("#view-mode button")) {
     b.onclick = () => setMode(b.dataset.mode as Mode);
   }
+  $("panes").append(ink.root);
   let savedMode: string | null = null;
   try { savedMode = localStorage.getItem("viewMode"); } catch { /* vista predefinita */ }
-  setMode(savedMode === "write" || savedMode === "preview" ? savedMode : "split");
+  setMode(MODES.includes(savedMode as Mode) ? (savedMode as Mode) : "split");
   $("back").onclick = () => {
     flushSave();
     persist();
@@ -392,6 +403,14 @@ async function main() {
   });
   document.addEventListener("keydown", (e) => {
     if (!(e.metaKey || e.ctrlKey)) return;
+    // Annulla e ripristina della penna, se il cursore non è in un campo di testo.
+    const typing = document.activeElement?.matches("input, textarea, select") ?? false;
+    if (mode() === "ink" && !typing && (e.key.toLowerCase() === "z" || e.key === "y")) {
+      e.preventDefault();
+      if (e.key === "y" || e.shiftKey) ink.redo();
+      else ink.undo();
+      return;
+    }
     if (e.key === "k") { e.preventDefault(); $("search").focus(); }
     if (e.key === "n") { e.preventDefault(); $("new").click(); }
     if (e.key === "j") { e.preventDefault(); toggleChat(); }

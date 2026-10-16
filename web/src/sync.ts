@@ -1,14 +1,19 @@
-import type { EdgeRecord, Entity, ExtraRecord, NodeRecord, PendingChange } from "./model";
+import type { EdgeRecord, Entity, ExtraRecord, InkPageRecord, NodeRecord, PendingChange } from "./model";
 import type { Store } from "./store";
 
 export interface PushResult {
   entity?: string;
   id?: string;
   status: "created" | "updated" | "merged" | "rejected";
-  record?: NodeRecord | EdgeRecord;
+  record?: SyncRecord;
   error?: string;
   message?: string;
 }
+
+type SyncRecord = NodeRecord | EdgeRecord | InkPageRecord;
+
+/** Ordine del push: un arco e una pagina hanno bisogno del loro nodo sul server. */
+const PUSH_ORDER: Record<Entity, number> = { node: 0, ink_page: 1, edge: 2 };
 
 export interface Transport {
   push(body: { device_id: string; changes: unknown[] }): Promise<{ results: PushResult[] }>;
@@ -86,7 +91,7 @@ export class SyncClient {
 
   /**
    * Scarta la modifica locale e tiene quella del server. Un record mai arrivato al server
-   * sparisce (con gli archi di un nodo); per gli altri il pull riparte da capo e riporta
+   * sparisce (con archi e pagine di un nodo); per gli altri il pull riparte da capo e riporta
    * la versione del server.
    */
   discard(entity: Entity, id: string) {
@@ -95,13 +100,13 @@ export class SyncClient {
     this.store.removePending(entity, id);
     if (pending.baseVersion === null) {
       if (entity === "node") this.removeNode(id);
-      else this.store.remove("edge", id);
+      else this.store.remove(entity, id);
     } else {
       this.store.setCursor(0);
     }
   }
 
-  /** Nodo e archi che lo toccano, con le loro voci in outbox. */
+  /** Nodo, archi che lo toccano e sue pagine a penna, con le loro voci in outbox. */
   private removeNode(id: string) {
     for (const edge of this.store.edges()) {
       if (edge.source_id === id || edge.target_id === id) {
@@ -109,12 +114,22 @@ export class SyncClient {
         this.store.remove("edge", edge.id);
       }
     }
+    for (const page of this.store.extras("ink_page")) {
+      if (page.node_id === id) {
+        this.store.removePending("ink_page", page.id);
+        this.store.remove("ink_page", page.id);
+      }
+    }
     this.store.removePending("node", id);
     this.store.remove("node", id);
   }
 
-  private record(change: PendingChange): NodeRecord | EdgeRecord | undefined {
-    return change.entity === "node" ? this.store.node(change.id) : this.store.edge(change.id);
+  private record(change: PendingChange): SyncRecord | undefined {
+    switch (change.entity) {
+      case "node": return this.store.node(change.id);
+      case "edge": return this.store.edge(change.id);
+      case "ink_page": return this.store.extra("ink_page", change.id) as InkPageRecord | undefined;
+    }
   }
 
   private async pushAll(): Promise<number> {
@@ -140,8 +155,7 @@ export class SyncClient {
     let bytes = 0;
     const queue = this.store.pending()
       .filter((p) => !p.rejection && !sent.has(`${p.entity}:${p.id}`))
-      // Nodi prima degli archi: un arco ha bisogno dei suoi estremi sul server.
-      .sort((a, b) => (a.entity === b.entity ? a.revision - b.revision : a.entity === "node" ? -1 : 1));
+      .sort((a, b) => PUSH_ORDER[a.entity] - PUSH_ORDER[b.entity] || a.revision - b.revision);
     for (const pending of queue) {
       if (batch.length === SyncClient.batchSize) break;
       const record = this.record(pending);
@@ -186,20 +200,25 @@ export class SyncClient {
     if (snapshot.entity === "node") this.retryDependents(snapshot.id);
   }
 
-  /** Archi rifiutati perché il nodo mancava sul server ripartono quando il nodo arriva. */
+  /** Archi e pagine rifiutati perché il nodo mancava sul server ripartono quando il nodo arriva. */
   private retryDependents(nodeId: string) {
     for (const pending of this.store.pending()) {
-      if (!pending.rejection || pending.entity !== "edge") continue;
-      const edge = this.store.edge(pending.id);
-      if (edge && (edge.source_id === nodeId || edge.target_id === nodeId)) {
-        this.store.savePending({ ...pending, rejection: undefined });
+      if (!pending.rejection) continue;
+      let dependent = false;
+      if (pending.entity === "edge") {
+        const edge = this.store.edge(pending.id);
+        dependent = !!edge && (edge.source_id === nodeId || edge.target_id === nodeId);
+      } else if (pending.entity === "ink_page") {
+        dependent = this.store.extra("ink_page", pending.id)?.node_id === nodeId;
       }
+      if (dependent) this.store.savePending({ ...pending, rejection: undefined });
     }
   }
 
-  private save(entity: Entity, record: NodeRecord | EdgeRecord) {
+  private save(entity: Entity, record: SyncRecord) {
     if (entity === "node") this.store.saveNode(record as NodeRecord);
-    else this.store.saveEdge(record as EdgeRecord);
+    else if (entity === "edge") this.store.saveEdge(record as EdgeRecord);
+    else this.store.saveExtra("ink_page", record as InkPageRecord);
   }
 
   private async pullAll(): Promise<number> {
@@ -221,6 +240,12 @@ export class SyncClient {
         if (health.has(edge.source_id) || health.has(edge.target_id)) {
           this.store.removePending("edge", edge.id);
           this.store.remove("edge", edge.id);
+        }
+      }
+      for (const page of this.store.extras("ink_page")) {
+        if (page.node_id && health.has(page.node_id)) {
+          this.store.removePending("ink_page", page.id);
+          this.store.remove("ink_page", page.id);
         }
       }
     }
@@ -247,7 +272,13 @@ export class SyncClient {
         this.save(entity, edge);
         return;
       }
-      case "ink_page":
+      case "ink_page": {
+        const page = data as InkPageRecord;
+        if (health.has(page.node_id)) return;
+        if (this.store.pendingChange(entity, page.id)) return;
+        this.save(entity, page);
+        return;
+      }
       case "attachment":
         this.store.saveExtra(entity, data as ExtraRecord);
         return;
@@ -256,10 +287,10 @@ export class SyncClient {
         if (kind === "node") {
           // Anche gli archi solo locali verso il nodo seguono il nodo, come sull'iPad.
           this.removeNode(id);
-        } else if (kind === "edge") {
+        } else if (kind === "edge" || kind === "ink_page") {
           this.store.removePending(kind, id);
           this.store.remove(kind, id);
-        } else if (kind === "ink_page" || kind === "attachment") {
+        } else if (kind === "attachment") {
           this.store.remove(kind, id);
         }
         return;

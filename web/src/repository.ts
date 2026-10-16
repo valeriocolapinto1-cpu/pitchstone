@@ -1,4 +1,6 @@
-import { type Area, type EdgeRecord, type Entity, type NodeRecord, type NodeType, titleKey, wikiTargets } from "./model";
+import {
+  type Area, type EdgeRecord, type Entity, type InkBackground, type InkPageRecord, type NodeRecord, type NodeType, titleKey, wikiTargets,
+} from "./model";
 import type { Store } from "./store";
 
 /** Modifiche locali: salva nell'archivio e mette in outbox, come il Repository dell'iPad. */
@@ -76,6 +78,71 @@ export class Repository {
     this.store.saveEdge({ ...edge, deleted_at: deleted ? this.now().toISOString() : null });
     this.enqueue("edge", edge.id, edge.version);
   }
+
+  inkPage(id: string): InkPageRecord | undefined {
+    return this.store.extra("ink_page", id) as InkPageRecord | undefined;
+  }
+
+  /** Pagine a penna del nodo (non le annotazioni sui PDF), in ordine. */
+  inkPages(nodeId: string, trashed = false): InkPageRecord[] {
+    return (this.store.extras("ink_page") as InkPageRecord[])
+      .filter((p) => p.node_id === nodeId && !p.attachment_id && !!p.deleted_at === trashed)
+      .sort((a, b) => a.page_no - b.page_no || a.created_at.localeCompare(b.created_at));
+  }
+
+  /**
+   * Nuova pagina in fondo al nodo. Solo per i nodi dell'archivio del PC, che non ha
+   * dati di salute: una pagina di un nodo di salute non può nascere qui.
+   */
+  createInkPage(nodeId: string, background: InkBackground = "blank"): InkPageRecord {
+    const node = this.store.node(nodeId);
+    if (!node || (node.type as string) === "health" || (node.area as string) === "salute") throw new Error("nodo non disponibile");
+    const all = (this.store.extras("ink_page") as InkPageRecord[]).filter((p) => p.node_id === nodeId);
+    const date = this.now().toISOString();
+    const page: InkPageRecord = {
+      id: crypto.randomUUID(),
+      node_id: nodeId,
+      page_no: all.reduce((max, p) => Math.max(max, p.page_no), -1) + 1,
+      background,
+      ink_data: "",
+      attachment_id: null,
+      pdf_page: null,
+      version: 0,
+      created_at: date,
+      updated_at: date,
+      deleted_at: null,
+      device_id: this.deviceId,
+    };
+    this.store.saveExtra("ink_page", page);
+    this.enqueue("ink_page", page.id, 0);
+    return page;
+  }
+
+  updateInkPage(id: string, change: Partial<Pick<InkPageRecord, "background" | "ink_data" | "deleted_at">>): InkPageRecord {
+    const old = this.store.extra("ink_page", id) as InkPageRecord | undefined;
+    if (!old) throw new Error("pagina non trovata");
+    const page: InkPageRecord = { ...old, ...change, updated_at: this.now().toISOString(), device_id: this.deviceId };
+    this.store.saveExtra("ink_page", page);
+    this.enqueue("ink_page", id, old.version);
+    return page;
+  }
+
+  /**
+   * Salva il disegno partito dai byte `loadedFrom`. Se nel frattempo una sync ha cambiato la
+   * pagina, i tratti vanno in una nuova pagina invece di sovrascriverla (come sull'iPad).
+   */
+  saveDrawing(id: string, inkData: string, loadedFrom: string): InkPageRecord {
+    const current = this.store.extra("ink_page", id) as InkPageRecord | undefined;
+    if (!current) throw new Error("pagina non trovata");
+    if (current.ink_data === loadedFrom || current.ink_data === inkData) {
+      return this.updateInkPage(id, { ink_data: inkData });
+    }
+    const copy = this.createInkPage(current.node_id, current.background);
+    return this.updateInkPage(copy.id, { ink_data: inkData });
+  }
+
+  trashInkPage(id: string) { this.updateInkPage(id, { deleted_at: this.now().toISOString() }); }
+  restoreInkPage(id: string) { this.updateInkPage(id, { deleted_at: null }); }
 
   /** Archi `link` allineati ai `[[...]]` del corpo, un solo arco attivo per destinazione. */
   syncLinks(id: string) {

@@ -11,6 +11,7 @@ Stato: completata ([ADR 0013](../decisioni/0013-pwa.md)).
 
 - [x] Test end-to-end della sincronizzazione tra iPad e PWA.
 - [x] Test del motore di sync della PWA (outbox, offline, conflitti, rifiuti, link).
+- [x] Test della penna sul PC: formato PSINK1 con il file di esempio condiviso con l'iPad, gomma a tratti, pagine nella sync (`web/test/ink.test.ts`, ADR 0015).
 - [x] Test del Tutor della PWA: ricerca, spazio del prompt, citazioni, scelta del modello, esclusione dei nodi di salute (`web/test/chat.test.ts`).
 
 ## Azioni manuali: Cloudflare Access su tutto il Worker
