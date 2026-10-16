@@ -36,6 +36,9 @@ public final class SyncEngine {
     /// Trasferimento dei file degli allegati; senza, gli allegati restano solo locali.
     private let attachments: AttachmentTransfer?
     private var running = false
+    /// Nodi trattenuti sul dispositivo finché l'utente non decide (sospetto dato di
+    /// salute, fase 6): le loro modifiche, archi, pagine e allegati restano in outbox.
+    public var holds: @MainActor (NodeRecord) -> Bool = { _ in false }
 
     /// Modifiche rifiutate dal server e ancora in outbox, in attesa di correzione.
     public var rejections: [Rejection] {
@@ -74,7 +77,8 @@ public final class SyncEngine {
     private func uploadAttachments() async {
         guard let attachments else { return }
         for record in store.allAttachments()
-        where !record.isUploaded && record.deletedAt == nil && Privacy.isSyncable(record, in: store) {
+        where !record.isUploaded && record.deletedAt == nil && Privacy.isSyncable(record, in: store)
+            && !(record.nodeID.flatMap(store.node).map(holds) ?? false) {
             guard store.pendingChange(.attachment, record.id)?.rejection == nil else { continue }
             do {
                 try await attachments.upload(record)
@@ -142,6 +146,7 @@ public final class SyncEngine {
                 }
                 continue
             }
+            if isHeld(pending) { continue }
             guard let change = outgoing(for: pending) else { continue }
             // Una voce che da sola supera il limite non passerebbe mai dal Worker:
             // resta in outbox come rifiutata invece di bloccare tutta la sync.
@@ -160,6 +165,16 @@ public final class SyncEngine {
         return batch.enumerated()
             .sorted { (order[$0.element.pending.entity]!, $0.offset) < (order[$1.element.pending.entity]!, $1.offset) }
             .map(\.element)
+    }
+
+    private func isHeld(_ pending: PendingChange) -> Bool {
+        func held(_ id: UUID?) -> Bool { id.flatMap(store.node).map(holds) ?? false }
+        switch pending.entity {
+        case .node: return held(pending.id)
+        case .edge: return store.edge(pending.id).map { held($0.sourceID) || held($0.targetID) } ?? false
+        case .inkPage: return held(store.inkPage(pending.id)?.nodeID)
+        case .attachment: return held(store.attachment(pending.id)?.nodeID)
+        }
     }
 
     /// Il record attuale da inviare, oppure nil (e la voce lascia l'outbox) se non può partire.

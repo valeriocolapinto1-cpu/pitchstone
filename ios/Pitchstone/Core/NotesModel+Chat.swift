@@ -22,7 +22,7 @@ extension NotesModel {
     func currentChatIndex() async -> SemanticIndex {
         if let cached = chatIndex, cached.revision == revision { return cached.index }
         let built = revision
-        let chunks = Chunker.corpus(nodes: activeNodes, extracted: extractedTexts)
+        let chunks = Chunker.corpus(nodes: activeNodes, extracted: extractedTexts, excluding: healthSuspects)
         let embedder = chatEmbedder
         let previous = chatIndex?.index
         let index = await Task.detached(priority: .userInitiated) {
@@ -32,8 +32,9 @@ extension NotesModel {
         return index
     }
 
+    /// Dato di salute, confermato o sospetto: la chat resta sul dispositivo.
     func isSensitive(_ id: UUID) -> Bool {
-        node(id).map(Privacy.isSensitive) ?? false
+        healthSuspects.contains(id) || (node(id).map(Privacy.isSensitive) ?? false)
     }
 
     /// Salva la conversazione come nodo `idea`, collegato al nodo da cui è partita.

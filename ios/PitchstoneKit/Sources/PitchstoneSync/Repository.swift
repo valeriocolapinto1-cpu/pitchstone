@@ -272,6 +272,32 @@ public final class Repository {
         return store.inkPages(of: nodeID).filter { $0.attachmentID == attachmentID && $0.pdfPage == page && $0.deletedAt == nil }
     }
 
+    /// Fase 6: il contenuto di un nodo va in un nodo di salute appena creato. Le pagine
+    /// a penna e gli allegati mai caricati passano al nuovo nodo e lasciano l'outbox;
+    /// un allegato già nel bucket resta dov'è (è già sul server), le sue annotazioni no.
+    public func moveLocalContent(from source: UUID, to target: UUID) {
+        let date = now()
+        var moved: Set<UUID> = []
+        for var attachment in store.allAttachments()
+        where attachment.nodeID == source && !attachment.isUploaded && attachment.version == 0 {
+            attachment.nodeID = target
+            attachment.updatedAt = date
+            store.saveAttachment(attachment)
+            store.removePending(.attachment, attachment.id)
+            moved.insert(attachment.id)
+        }
+        for var page in store.inkPages(of: source) {
+            if let attachment = page.attachmentID, !moved.contains(attachment) {
+                page.attachmentID = nil
+                page.pdfPage = nil
+            }
+            page.nodeID = target
+            page.updatedAt = date
+            store.saveInkPage(page)
+            store.removePending(.inkPage, page.id)
+        }
+    }
+
     // MARK: Cestino
 
     public func trashedNodes() -> [NodeRecord] {
