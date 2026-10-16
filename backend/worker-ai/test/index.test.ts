@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import worker, { type Env } from "../src/index";
-import { resetCertsCache, verifyAccessJwt } from "../src/access";
+import { normalizeTeamDomain, resetCertsCache, verifyAccessJwt } from "../src/access";
 
 const TEAM = "https://pitchstone.cloudflareaccess.com";
 const AUD = "aud-test";
@@ -337,5 +337,13 @@ describe("chat", () => {
     });
     const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, GEMINI_API_KEY: "" });
     expect(response.status).toBe(503);
+  });
+});
+
+describe("normalizeTeamDomain", () => {
+  it("aggiunge https:// e toglie la barra finale", () => {
+    expect(normalizeTeamDomain("team.cloudflareaccess.com")).toBe("https://team.cloudflareaccess.com");
+    expect(normalizeTeamDomain("https://team.cloudflareaccess.com/")).toBe("https://team.cloudflareaccess.com");
+    expect(normalizeTeamDomain(" ")).toBe("");
   });
 });

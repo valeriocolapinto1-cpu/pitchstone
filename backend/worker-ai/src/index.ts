@@ -1,4 +1,4 @@
-import { verifyAccessJwt } from "./access";
+import { normalizeTeamDomain, verifyAccessJwt } from "./access";
 import { dailyBackup } from "./backup";
 import { chat, DEFAULT_MODEL, validateChat } from "./chat";
 import { emptyStorageTrash, signUrl, validateSign } from "./storage";
@@ -55,7 +55,7 @@ export default {
     }
 
     const authorized = await verifyAccessJwt(request.headers.get("cf-access-jwt-assertion"), {
-      teamDomain: env.ACCESS_TEAM_DOMAIN,
+      teamDomain: normalizeTeamDomain(env.ACCESS_TEAM_DOMAIN ?? ""),
       audience: env.ACCESS_AUD,
     });
     if (!authorized) return Response.json({ error: "non autorizzato" }, { status: 401 });

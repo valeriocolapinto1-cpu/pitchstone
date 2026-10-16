@@ -3,6 +3,13 @@
 // service token. Verificarlo nel Worker impedisce di aggirare Access, per
 // esempio chiamando direttamente l'indirizzo *.workers.dev.
 
+/** "team.cloudflareaccess.com", con o senza https:// e barra finale, diventa "https://team.cloudflareaccess.com". */
+export function normalizeTeamDomain(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  return /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export interface AccessConfig {
   teamDomain: string; // https://<team>.cloudflareaccess.com
   audience: string; // AUD tag dell'applicazione Access
