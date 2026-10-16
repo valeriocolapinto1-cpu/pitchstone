@@ -1,5 +1,9 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
+import {
+  answer, type ChatMessage, corpus, DEFAULT_OLLAMA_MODEL, linkCitations, loadSettings, nodeFromLink,
+  OllamaProvider, saveSettings, WorkerProvider,
+} from "./chat";
 import { AREAS, LABELS, NODE_TYPES, type NodeRecord, titleKey } from "./model";
 import { Repository } from "./repository";
 import { IndexedDBStore } from "./store";
@@ -149,6 +153,113 @@ async function runSync() {
   else if (selected && !editing()) open(selected);
 }
 
+// MARK: Tutor
+
+let chatHistory: ChatMessage[] = [];
+let chatAbort: AbortController | undefined;
+
+function chatSettings() {
+  return { model: $<HTMLInputElement>("chat-model").value, localOnly: $<HTMLInputElement>("chat-local-only").checked };
+}
+
+function appendMessage(role: "user" | "assistant" | "error", content: string | Node[]): HTMLElement {
+  const div = document.createElement("div");
+  div.className = `msg ${role === "error" ? "assistant error" : role}`;
+  if (typeof content === "string") div.textContent = content;
+  else div.append(...content);
+  $("chat-log").append(div);
+  div.scrollIntoView({ block: "end" });
+  return div;
+}
+
+async function ask(question: string) {
+  const settings = chatSettings();
+  const fetchFn = (input: string, init?: RequestInit) => fetch(input, init);
+  const providers = { local: new OllamaProvider(settings.model.trim() || DEFAULT_OLLAMA_MODEL, fetchFn), online: new WorkerProvider(fetchFn) };
+  appendMessage("user", question);
+  const pending = appendMessage("assistant", "…");
+  const controller = new AbortController();
+  chatAbort = controller;
+  $<HTMLButtonElement>("chat-send").disabled = true;
+  try {
+    const reply = await answer(question, chatHistory, corpus(store.nodes()), providers, { localOnly: settings.localOnly, signal: controller.signal });
+    if (controller.signal.aborted) return;
+    chatHistory.push({ role: "user", text: question }, { role: "assistant", text: reply.text });
+    const body = document.createElement("div");
+    body.innerHTML = DOMPurify.sanitize(marked.parse(linkCitations(reply.text, reply.citations)) as string);
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = reply.fallbackReason ? `${reply.providerLabel} · locale non usato: ${reply.fallbackReason}` : reply.providerLabel;
+    const nodes: Node[] = [body];
+    if (reply.citations.length) {
+      const sources = document.createElement("div");
+      sources.className = "sources";
+      sources.append("Fonti: ");
+      for (const c of reply.citations) {
+        const a = document.createElement("a");
+        a.href = `#nodo/${encodeURIComponent(c.nodeId)}`;
+        a.textContent = `[${c.number}] ${c.title}`;
+        sources.append(a, " ");
+      }
+      nodes.push(sources);
+    }
+    nodes.push(meta);
+    pending.replaceChildren(...nodes);
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    pending.className = "msg assistant error";
+    pending.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    if (chatAbort === controller) {
+      chatAbort = undefined;
+      $<HTMLButtonElement>("chat-send").disabled = false;
+    }
+  }
+}
+
+function setupChat() {
+  const settings = loadSettings(localStorage);
+  $<HTMLInputElement>("chat-model").value = settings.model;
+  $<HTMLInputElement>("chat-local-only").checked = settings.localOnly;
+  for (const id of ["chat-model", "chat-local-only"]) $(id).addEventListener("change", () => saveSettings(localStorage, chatSettings()));
+  const toggle = () => {
+    $("chat").hidden = !$("chat").hidden;
+    if (!$("chat").hidden) $("chat-input").focus();
+  };
+  $("chat-toggle").onclick = toggle;
+  $("chat-close").onclick = () => { $("chat").hidden = true; };
+  $("chat-new").onclick = () => {
+    chatAbort?.abort();
+    chatAbort = undefined;
+    $<HTMLButtonElement>("chat-send").disabled = false;
+    chatHistory = [];
+    $("chat-log").replaceChildren();
+  };
+  $("chat-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = $<HTMLTextAreaElement>("chat-input");
+    const question = input.value.trim();
+    if (!question || chatAbort) return;
+    input.value = "";
+    void ask(question);
+  });
+  $("chat-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      $<HTMLFormElement>("chat-form").requestSubmit();
+    }
+  });
+  // Le citazioni aprono il nodo della fonte.
+  $("chat-log").addEventListener("click", (e) => {
+    const link = (e.target as HTMLElement).closest("a");
+    const id = link ? nodeFromLink(link.getAttribute("href") ?? "") : undefined;
+    if (!id) return;
+    e.preventDefault();
+    if (store.node(id) && !store.node(id)?.deleted_at) open(id);
+  });
+  return toggle;
+}
+
 /**
  * Una sola scheda attiva alla volta: l'archivio è un unico valore in IndexedDB e due schede
  * si sovrascriverebbero a vicenda. Le altre aspettano che la prima si chiuda.
@@ -177,6 +288,7 @@ async function main() {
   for (const a of AREAS) $("area").append(new Option(LABELS.area[a], a));
   for (const id of ["title", "type", "area", "tags", "body"]) $(id).addEventListener("input", scheduleSave);
   $("search").addEventListener("input", renderList);
+  const toggleChat = setupChat();
   $("new").onclick = () => {
     flushSave();
     const n = repo.createNode({ title: "Nuovo nodo" });
@@ -211,6 +323,7 @@ async function main() {
     if (!(e.metaKey || e.ctrlKey)) return;
     if (e.key === "k") { e.preventDefault(); $("search").focus(); }
     if (e.key === "n") { e.preventDefault(); $("new").click(); }
+    if (e.key === "j") { e.preventDefault(); toggleChat(); }
   });
   renderList();
   renderRejections();
