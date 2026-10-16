@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-4-ocr
-Commit: 7629b2379ce3573fba76a13277fa30e2e4bea324
+Branch: fase-5-chat
+Commit: 46f3d326f58b0d81c13f495501ac57730c42e2c9
