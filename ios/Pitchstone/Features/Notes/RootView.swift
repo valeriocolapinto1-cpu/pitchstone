@@ -16,6 +16,7 @@ struct RootView: View {
     /// Nodo aperto dal grafo, in un foglio sopra il grafo.
     @State private var graphOpen: GraphOpen?
     @State private var showingChat = false
+    @State private var showingQuiz = false
     @State private var chatScope = ChatPanel.ChatScope.general
     @State private var chats = ChatStore()
     /// Nodo della chat dedicata: segue l'elenco, non le citazioni, così aprire
@@ -73,6 +74,10 @@ struct RootView: View {
                         .labelStyle(.iconOnly)
                         Button { toggleChat(nil) } label: {
                             Label("Chat", systemImage: "bubble.left.and.text.bubble.right")
+                        }
+                        .labelStyle(.iconOnly)
+                        Button { showingQuiz = true } label: {
+                            Label("Ripasso", systemImage: "rectangle.stack.badge.play")
                         }
                         .labelStyle(.iconOnly)
                         Spacer()
@@ -138,10 +143,17 @@ struct RootView: View {
             Button("Grafo") { showingGraph.toggle() }
                 .keyboardShortcut("g", modifiers: .command)
                 .hidden()
+            // ⌘R apre il ripasso.
+            Button("Ripasso") { showingQuiz = true }
+                .keyboardShortcut("r", modifiers: .command)
+                .hidden()
             // ⌘/ apre e chiude la chat.
             Button("Chat") { toggleChat(nil) }
                 .keyboardShortcut("/", modifiers: .command)
                 .hidden()
+        }
+        .sheet(isPresented: $showingQuiz) {
+            QuizView()
         }
         .sheet(isPresented: $showingTrash) {
             TrashView()

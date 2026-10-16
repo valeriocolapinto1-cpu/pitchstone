@@ -3,6 +3,7 @@ import Foundation
 import PencilKit
 import PitchstoneAI
 import PitchstoneStore
+import PitchstoneStudy
 import PitchstoneSync
 import UIKit
 
@@ -159,5 +160,30 @@ struct DemoChatProvider: ChatProvider {
 
         Esempio: per $f(x) = x^2$ il rapporto vale $2x + h$, quindi $f'(x) = 2x$.
         """
+    }
+}
+
+extension StudyModel {
+    /// Tre quiz sulla derivata, già in scadenza, per lo screenshot del ripasso.
+    func loadDemoQuizzes() {
+        guard quizzes.isEmpty, let node = notes.node(titled: "Derivata") else { return }
+        let past = now().addingTimeInterval(-86_400)
+        let due = ReviewState(due: past, stability: 3, difficulty: 5, reps: 1, phase: .review, lastReview: past.addingTimeInterval(-3 * 86_400))
+        store.insert([
+            QuizRecord(
+                nodeID: node.id, subject: "Analisi 1", kind: .mcq, question: "Qual è la derivata di $x^2$?",
+                options: ["$2x$", "$x$", "$x^2$", "$2$"], answer: "$2x$",
+                explanation: "Regola della potenza: $\\frac{d}{dx}x^n = n x^{n-1}$.", difficulty: 2, language: "it",
+                createdAt: past, review: due),
+            QuizRecord(
+                nodeID: node.id, subject: "Analisi 1", kind: .calc, question: "Quanto vale $f'(1)$ se $f(x) = 3x^2$?",
+                answer: "6", explanation: "$f'(x) = 6x$, quindi $f'(1) = 6$.", difficulty: 3, language: "it",
+                createdAt: past, review: due),
+            QuizRecord(
+                nodeID: node.id, subject: "Analisi 1", kind: .open, question: "Che cosa misura la derivata?",
+                answer: "La variazione istantanea della funzione: il limite del rapporto incrementale.",
+                difficulty: 3, language: "it", createdAt: past, review: due),
+        ])
+        reload()
     }
 }

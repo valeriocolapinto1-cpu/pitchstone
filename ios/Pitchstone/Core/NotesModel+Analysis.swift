@@ -98,6 +98,9 @@ extension NotesModel {
 
     // MARK: Estrazione
 
+    /// Modelli per i quiz: gli stessi dell'analisi.
+    var quizProviders: (local: ChatProvider?, online: ChatProvider?) { analysisProviders }
+
     private var analysisProviders: (local: ChatProvider?, online: ChatProvider?) {
         if let analysisProvidersOverride { return analysisProvidersOverride }
         let online = chatUsesGemini ? workerTransport.map(WorkerChatProvider.init(transport:)) : nil
