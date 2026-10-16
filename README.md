@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-9-correzioni
-Commit: 4a7a984c0019a7229891c41045003992b464bdcd
+Branch: main
+Commit: ae62372a09bd9e79c53e8551e91686ca5e889efc
