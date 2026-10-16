@@ -25,6 +25,24 @@ async function readJson(request: Request): Promise<unknown> {
   }
 }
 
+/**
+ * Difesa CSRF: la PWA è sulla stessa origine e il cookie di Access viaggia da solo.
+ * Un form di un altro sito non può mandare `application/json` senza preflight, e un browser
+ * moderno dichiara la provenienza in Sec-Fetch-Site. L'iPad (service token) non manda
+ * Sec-Fetch-Site ma usa sempre JSON.
+ */
+function crossSite(request: Request): Response | null {
+  const site = request.headers.get("sec-fetch-site");
+  if (site !== null && site !== "same-origin" && site !== "none") {
+    return Response.json({ error: "richiesta da un altro sito" }, { status: 403 });
+  }
+  const type = (request.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (type !== "application/json") {
+    return Response.json({ error: "serve content-type application/json" }, { status: 415 });
+  }
+  return null;
+}
+
 export default {
   async fetch(request, env): Promise<Response> {
     const { pathname } = new URL(request.url);
@@ -45,6 +63,8 @@ export default {
     if (request.method !== "POST") {
       return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
     }
+    const rejected = crossSite(request);
+    if (rejected) return rejected;
     if (pathname === "/ai/chat") {
       if (!env.GEMINI_API_KEY) return Response.json({ error: "Gemini non configurato" }, { status: 503 });
       try {

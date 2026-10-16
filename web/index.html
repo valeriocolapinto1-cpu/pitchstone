@@ -20,6 +20,11 @@
     #body { flex: 1; font-family: Menlo, monospace; }
     #preview { overflow: auto; padding: 12px 24px; border-left: 1px solid #8884; }
     #status { font-size: 12px; padding: 8px; opacity: .7; }
+    #rejections { font-size: 12px; padding: 8px; border-top: 1px solid #8884; display: grid; gap: 6px; }
+    #rejections div { display: flex; gap: 6px; align-items: center; }
+    #rejections span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    #blocked { position: fixed; inset: 0; display: grid; place-items: center; background: Canvas; padding: 24px; text-align: center; }
+    #blocked[hidden] { display: none; }
     .wiki { text-decoration: underline; cursor: pointer; color: #0a84ff; }
   </style>
 </head>
@@ -27,6 +32,7 @@
   <aside>
     <header><input id="search" placeholder="Cerca (⌘K)"><button id="new" title="Nuovo nodo (⌘N)">＋</button></header>
     <ul id="list"></ul>
+    <div id="rejections" hidden></div>
     <div id="status">Solo locale</div>
   </aside>
   <main>
@@ -37,6 +43,7 @@
     </section>
     <article id="preview"></article>
   </main>
+  <div id="blocked" hidden>Pitchstone è già aperto in un'altra scheda: chiudila per continuare qui.</div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

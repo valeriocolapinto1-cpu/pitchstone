@@ -79,14 +79,22 @@ export class IndexedDBStore extends MemoryStore {
     this.data = { ...empty(), ...saved };
   }
 
+  /** Risolve solo a transazione conclusa: il successo della richiesta non vuol dire che sia su disco. */
   override async flush(): Promise<void> {
+    if (!this.db) return;
     const snapshot = structuredClone(this.data);
-    await this.request((s) => s.put(snapshot, "snapshot"), "readwrite");
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction("state", "readwrite");
+      tx.objectStore("state").put(snapshot, "snapshot");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error("salvataggio interrotto"));
+    });
   }
 
-  private request<T>(run: (store: IDBObjectStore) => IDBRequest, mode: IDBTransactionMode = "readonly"): Promise<T> {
+  private request<T>(run: (store: IDBObjectStore) => IDBRequest): Promise<T> {
     return new Promise((resolve, reject) => {
-      const tx = this.db!.transaction("state", mode);
+      const tx = this.db!.transaction("state", "readonly");
       const request = run(tx.objectStore("state"));
       request.onsuccess = () => resolve(request.result as T);
       request.onerror = () => reject(request.error);

@@ -1,17 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { titleKey, wikiTargets } from "../src/model";
 import { Repository } from "../src/repository";
 import { MemoryStore } from "../src/store";
-import { type PushResult, SyncClient, type Transport } from "../src/sync";
+import { AuthError, HttpTransport, type PushResult, SyncClient, type Transport } from "../src/sync";
 
 /** Server finto: versioni, cursore, rifiuta i nodi di salute come il database. */
 class FakeServer implements Transport {
   rows: { entity: string; data: Record<string, unknown>; seq: number }[] = [];
   seq = 0;
   online = true;
+  pushes: number[] = [];
 
   async push(body: { device_id: string; changes: unknown[] }): Promise<{ results: PushResult[] }> {
     if (!this.online) throw new Error("offline");
+    this.pushes.push(new TextEncoder().encode(JSON.stringify(body.changes)).length);
     const results = (body.changes as { entity: string; base_version: number | null; data: Record<string, unknown> }[]).map((c) => {
       if (c.data.type === "health" || c.data.area === "salute") return { status: "rejected" as const, message: "salute" };
       const current = this.rows.filter((r) => r.entity === c.entity && r.data.id === c.data.id).at(-1);
@@ -106,6 +108,114 @@ describe("sync della PWA", () => {
     expect(pc.store.edges().filter((e) => !e.deleted_at)).toHaveLength(0);
     pc.repo.updateNode(a.id, { body_md: "vedi [[c]]" });
     expect(pc.store.edges().filter((e) => !e.deleted_at)).toHaveLength(1);
+  });
+});
+
+describe("revisione della sync", () => {
+  it("divide il push sotto il limite di byte e rifiuta in locale una voce troppo grande", async () => {
+    const server = new FakeServer();
+    const pc = device(server, "pc");
+    const text = "x".repeat(1_000_000);
+    for (let i = 0; i < 5; i++) pc.repo.createNode({ title: `N${i}`, body: text });
+    const huge = pc.repo.createNode({ title: "Enorme", body: "y".repeat(SyncClient.maxBatchBytes) });
+    expect(await pc.sync.sync()).toEqual({ pushed: 5, pulled: 5 });
+    expect(server.pushes.length).toBe(2);
+    for (const bytes of server.pushes) expect(bytes).toBeLessThanOrEqual(SyncClient.maxBatchBytes);
+    expect(pc.sync.rejections).toMatchObject([{ id: huge.id, rejection: "troppo grande per la sincronizzazione" }]);
+  });
+
+  it("un nodo accettato fa ripartire gli archi rifiutati che dipendono da lui", async () => {
+    const server = new FakeServer();
+    const pc = device(server, "pc");
+    pc.repo.createNode({ title: "A" });
+    const b = pc.repo.createNode({ title: "B", body: "[[A]]" });
+    const [edge] = pc.store.edges();
+    pc.store.savePending({ ...pc.store.pendingChange("edge", edge.id)!, rejection: "nodo mancante" });
+    await pc.sync.sync();
+    expect(pc.sync.rejections).toHaveLength(0);
+    expect(pc.store.edge(edge.id)?.version).toBe(1);
+    expect(server.rows.some((r) => r.entity === "edge" && r.data.source_id === b.id)).toBe(true);
+  });
+
+  it("Scarta toglie un record mai arrivato al server, con i suoi archi", async () => {
+    const server = new FakeServer();
+    const pc = device(server, "pc");
+    const a = pc.repo.createNode({ title: "A" });
+    pc.repo.createNode({ title: "B", body: "[[A]]" });
+    pc.store.savePending({ ...pc.store.pendingChange("node", a.id)!, rejection: "no" });
+    pc.sync.discard("node", a.id);
+    expect(pc.store.node(a.id)).toBeUndefined();
+    expect(pc.store.edges()).toHaveLength(0);
+    expect(pc.store.pending().map((p) => p.entity)).toEqual(["node"]);
+  });
+
+  it("Scarta riporta la versione del server, Riprova rimanda la modifica", async () => {
+    const server = new FakeServer();
+    const pc = device(server, "pc");
+    const node = pc.repo.createNode({ title: "Nota", body: "server" });
+    await pc.sync.sync();
+    pc.repo.updateNode(node.id, { body_md: "locale" });
+    pc.store.savePending({ ...pc.store.pendingChange("node", node.id)!, rejection: "conflitto" });
+    pc.sync.retry("node", node.id);
+    expect(pc.sync.rejections).toHaveLength(0);
+    pc.store.savePending({ ...pc.store.pendingChange("node", node.id)!, rejection: "conflitto" });
+    pc.sync.discard("node", node.id);
+    await pc.sync.sync();
+    expect(pc.store.node(node.id)?.body_md).toBe("server");
+    expect(pc.store.pending()).toHaveLength(0);
+  });
+
+  it("un nodo eliminato per sempre porta via archi e voci in outbox", async () => {
+    const server = new FakeServer();
+    const pc = device(server, "pc");
+    const a = pc.repo.createNode({ title: "A" });
+    await pc.sync.sync();
+    pc.repo.createNode({ title: "B", body: "[[A]]" });
+    server.rows.push({ entity: "purged", data: { entity: "node", id: a.id }, seq: ++server.seq });
+    await (pc.sync as unknown as { pullAll(): Promise<number> }).pullAll();
+    expect(pc.store.node(a.id)).toBeUndefined();
+    expect(pc.store.edges()).toHaveLength(0);
+    expect(pc.store.pending().map((p) => p.entity)).toEqual(["node"]);
+  });
+
+  it("scarta i nodi di salute in arrivo e i loro archi", async () => {
+    const server = new FakeServer();
+    const pc = device(server, "pc");
+    const ok = { id: "ok", type: "concept", area: "studio", title: "Ok", version: 1 };
+    const edge = (id: string, target: string) => ({ id, source_id: "ok", target_id: target, kind: "link", version: 1 });
+    server.rows.push(
+      { entity: "node", data: ok, seq: ++server.seq },
+      { entity: "edge", data: edge("e1", "h1"), seq: ++server.seq },
+      { entity: "node", data: { ...ok, id: "h1", type: "health" }, seq: ++server.seq },
+      { entity: "node", data: { ...ok, id: "h2", area: "salute" }, seq: ++server.seq },
+      { entity: "edge", data: edge("e2", "h2"), seq: ++server.seq },
+    );
+    await pc.sync.sync();
+    expect(pc.store.nodes().map((n) => n.id)).toEqual(["ok"]);
+    expect(pc.store.edges()).toHaveLength(0);
+  });
+
+  it("scrive su disco anche quando la sync fallisce", async () => {
+    const server = new FakeServer();
+    const store = new MemoryStore();
+    const flush = vi.spyOn(store, "flush");
+    const sync = new SyncClient(store, server, "pc");
+    server.online = false;
+    await expect(sync.sync()).rejects.toThrow();
+    expect(flush).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("trasporto HTTP", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("manda JSON e riconosce il login scaduto", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(null, { status: 401 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(new HttpTransport().pull({ cursor: 0, limit: 1 })).rejects.toBeInstanceOf(AuthError);
+    expect(new Headers(fetch.mock.calls[0][1]?.headers).get("content-type")).toBe("application/json");
+    fetch.mockResolvedValueOnce(new Response(null, { status: 500 }));
+    await expect(new HttpTransport().pull({ cursor: 0, limit: 1 })).rejects.not.toBeInstanceOf(AuthError);
   });
 });
 
