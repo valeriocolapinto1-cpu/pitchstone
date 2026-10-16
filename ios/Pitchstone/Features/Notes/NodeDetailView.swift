@@ -264,33 +264,35 @@ struct NodeDetailView: View {
                 let count = notes.attachments(of: nodeID).count
                 Label(count > 0 ? "Allegati (\(count))" : "Allegati", systemImage: count > 0 ? "paperclip.circle.fill" : "paperclip")
             }
-            Button {
-                save()
-                showingHistory = true
-            } label: {
-                Label("Storico", systemImage: "clock.arrow.circlepath")
-            }
+            // Le azioni meno frequenti in un menu: con troppi pulsanti la barra comprime il selettore della vista.
             Menu {
-                Button("Markdown (.md)") {
+                Button {
+                    save()
+                    showingHistory = true
+                } label: {
+                    Label("Storico", systemImage: "clock.arrow.circlepath")
+                }
+                Button("Esporta in Markdown (.md)", systemImage: "square.and.arrow.up") {
                     save()
                     guard let node = notes.node(nodeID) else { return }
                     exportFile = ExportFile(
                         document: DataFile(data: Data(VaultExport.markdown(node).utf8)), type: .plainText,
                         name: VaultExport.fileName(node.title) + ".md")
                 }
-                Button("PDF") {
+                Button("Esporta in PDF", systemImage: "doc.richtext") {
                     save()
                     guard let node = notes.node(nodeID) else { return }
                     exportFile = ExportFile(document: DataFile(data: notes.pdf(of: node)), type: .pdf, name: VaultExport.fileName(node.title))
                 }
+                Divider()
+                Button(role: .destructive) {
+                    save()
+                    notes.trash(nodeID)
+                } label: {
+                    Label("Sposta nel cestino", systemImage: "trash")
+                }
             } label: {
-                Label("Esporta", systemImage: "square.and.arrow.up")
-            }
-            Button(role: .destructive) {
-                save()
-                notes.trash(nodeID)
-            } label: {
-                Label("Sposta nel cestino", systemImage: "trash")
+                Label("Altro", systemImage: "ellipsis.circle")
             }
         }
     }
