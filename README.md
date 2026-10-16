@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-8-esami
-Commit: 1adad343a5d4f4b62d1c98192fc509dd6974d264
+Branch: main
+Commit: b18f88116f973f554c41e8aaf17a6ba0715c8e84
