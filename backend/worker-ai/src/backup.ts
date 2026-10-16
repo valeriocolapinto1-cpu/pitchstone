@@ -31,6 +31,7 @@ export async function dailyBackup(
   config: SupabaseConfig,
   now: Date = new Date(),
   fetchImpl: typeof fetch = fetch,
+  { expire = true }: { expire?: boolean } = {},
 ): Promise<"saved" | "failed" | "refused"> {
   const snapshot = await rpc(config, "backup_snapshot", {}, fetchImpl);
   if (!snapshot.ok) {
@@ -38,7 +39,13 @@ export async function dailyBackup(
     return "failed";
   }
   const body = await snapshot.text();
-  const parsed = JSON.parse(body) as Snapshot;
+  let parsed: Snapshot;
+  try {
+    parsed = JSON.parse(body) as Snapshot;
+  } catch {
+    console.error("Backup: istantanea illeggibile");
+    return "failed";
+  }
   if (parsed.format !== "pitchstone-backup" || containsHealth(parsed)) {
     console.error("Backup rifiutato: formato inatteso o dati di salute");
     return "refused";
@@ -53,7 +60,7 @@ export async function dailyBackup(
     console.error(`Backup: upload ${saved.status} ${await saved.text()}`);
     return "failed";
   }
-  await removeExpired(config, now, fetchImpl);
+  if (expire) await removeExpired(config, now, fetchImpl);
   return "saved";
 }
 

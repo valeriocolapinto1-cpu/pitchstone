@@ -29,7 +29,8 @@ public struct ExamInfo: Sendable, Equatable {
             let lower = tag.lowercased()
             if lower.hasPrefix(datePrefix) {
                 let parts = lower.dropFirst(datePrefix.count).split(separator: "-").compactMap { Int($0) }
-                if parts.count == 3, (1...12).contains(parts[1]), (1...31).contains(parts[2]) {
+                // 31 febbraio no: il calendario lo porterebbe a marzo.
+                if parts.count == 3, isValid(year: parts[0], month: parts[1], day: parts[2]) {
                     info.date = DateComponents(year: parts[0], month: parts[1], day: parts[2])
                 }
             } else if lower.hasPrefix(statusPrefix), let status = Status(rawValue: String(lower.dropFirst(statusPrefix.count))) {
@@ -37,6 +38,15 @@ public struct ExamInfo: Sendable, Equatable {
             }
         }
         return info
+    }
+
+    static func isValid(year: Int, month: Int, day: Int) -> Bool {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        guard (1...12).contains(month), (1...31).contains(day),
+              let date = calendar.date(from: DateComponents(year: year, month: month, day: day)) else { return false }
+        let back = calendar.dateComponents([.year, .month, .day], from: date)
+        return back.year == year && back.month == month && back.day == day
     }
 
     /// I tag del nodo con data e stato aggiornati; gli altri tag restano.

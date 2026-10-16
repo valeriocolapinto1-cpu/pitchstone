@@ -12,6 +12,8 @@ struct BackupView: View {
     @State private var password = ""
     @State private var confirm = ""
     @State private var backupFile: DataFile?
+    /// Allegati rimasti fuori dal backup, detti quando il file è salvato.
+    @State private var missingFiles = 0
     @State private var restoring = false
     @State private var restorePassword = ""
     @State private var message: String?
@@ -32,7 +34,9 @@ struct BackupView: View {
                     SecureField("Ripeti la password", text: $confirm)
                     Button("Crea il backup cifrato") {
                         do {
-                            backupFile = DataFile(data: try HealthBackup.seal(notes.healthArchive(), password: password))
+                            let archive = notes.healthArchive()
+                            backupFile = DataFile(data: try HealthBackup.seal(archive, password: password))
+                            missingFiles = archive.missingFiles.count
                         } catch {
                             message = error.localizedDescription
                         }
@@ -76,7 +80,9 @@ struct BackupView: View {
                 case .success:
                     password = ""
                     confirm = ""
-                    message = String(localized: "Backup salvato.")
+                    message = missingFiles == 0
+                        ? String(localized: "Backup salvato.")
+                        : String(localized: "Backup salvato, ma \(missingFiles) allegati non si leggono e mancano.")
                 case .failure(let error):
                     message = error.localizedDescription
                 }

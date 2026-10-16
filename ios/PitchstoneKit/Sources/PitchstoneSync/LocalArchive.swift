@@ -14,6 +14,9 @@ public struct LocalArchive: Codable, Sendable, Equatable {
     /// Contenuto dei file degli allegati, per id.
     public var files: [UUID: Data]
 
+    /// Allegati senza file: illeggibili quando l'archivio è stato creato.
+    public var missingFiles: [UUID] { attachments.map(\.id).filter { files[$0] == nil } }
+
     /// I dati di salute presenti nell'archivio locale, e solo quelli.
     @MainActor
     public static func health(from store: SyncStore, files: (UUID) -> Data?, now: Date) -> LocalArchive {
@@ -34,6 +37,12 @@ public struct LocalArchive: Codable, Sendable, Equatable {
     @MainActor
     public func restore(into store: SyncStore, writeFile: (UUID, Data) throws -> Void) throws -> Int {
         guard format == Self.format, nodes.allSatisfy(Privacy.isSensitive) else { throw RepositoryError.invalidArchive }
+        // Prima i file: se uno non si scrive, nel database non è cambiato niente.
+        // Un allegato senza file nell'archivio non si ripristina.
+        let restorable = attachments.filter { store.attachment($0.id) == nil && files[$0.id] != nil }
+        for attachment in restorable {
+            try writeFile(attachment.id, files[attachment.id]!)
+        }
         var added = 0
         for node in nodes where store.node(node.id) == nil {
             store.saveNode(node)
@@ -45,8 +54,7 @@ public struct LocalArchive: Codable, Sendable, Equatable {
         for page in inkPages where store.inkPage(page.id) == nil && store.node(page.nodeID) != nil {
             store.saveInkPage(page)
         }
-        for attachment in attachments where store.attachment(attachment.id) == nil {
-            if let data = files[attachment.id] { try writeFile(attachment.id, data) }
+        for attachment in restorable {
             store.saveAttachment(attachment)
         }
         return added

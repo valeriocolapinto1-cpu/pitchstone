@@ -152,7 +152,7 @@ describe.skipIf(!url || !secretKey || !anonKey)("sync end-to-end", () => {
     expect(pushed.results[0].status).toBe("created");
     const rpcHeaders = { apikey: secretKey ?? "", "content-type": "application/json" };
     expect((await realFetch(`${url}/rest/v1/rpc/purge_trash`, { method: "POST", headers: rpcHeaders, body: "{}" })).ok).toBe(true);
-    expect(await emptyStorageTrash({ url: url ?? "", secretKey: secretKey ?? "" })).toBeGreaterThanOrEqual(1);
+    expect(await emptyStorageTrash({ url: url ?? "", secretKey: secretKey ?? "" }, fetch, "0 seconds")).toBeGreaterThanOrEqual(1);
     const gone = await worker.fetch(
       new Request("https://ai-proxy.example/storage/sign", {
         method: "POST",
@@ -167,7 +167,8 @@ describe.skipIf(!url || !secretKey || !anonKey)("sync end-to-end", () => {
   it("il backup giornaliero finisce nel bucket privato, senza dati di salute", async () => {
     const config = { url: url ?? "", secretKey: secretKey ?? "" };
     const date = new Date("2030-01-15T04:30:00Z");
-    expect(await dailyBackup(config, date)).toBe("saved");
+    // Senza scadenza: contro un progetto vero non cancella i backup veri.
+    expect(await dailyBackup(config, date, fetch, { expire: false })).toBe("saved");
     const saved = await realFetch(`${url}/storage/v1/object/backups/2030-01-15.json`, {
       headers: { apikey: secretKey ?? "" },
     });
