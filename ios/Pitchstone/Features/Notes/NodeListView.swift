@@ -6,6 +6,8 @@ import SwiftUI
 struct NodeListView: View {
     @Environment(NotesModel.self) private var notes
     @Binding var selection: UUID?
+    /// Ricerca attiva: ⌘F la apre da tastiera.
+    @Binding var searching: Bool
     @State private var query = ""
 
     var body: some View {
@@ -44,7 +46,7 @@ struct NodeListView: View {
                 ContentUnavailableView.search(text: query)
             }
         }
-        .searchable(text: $query, prompt: Text("Cerca nei nodi"))
+        .searchable(text: $query, isPresented: $searching, prompt: Text("Cerca nei nodi"))
         .navigationTitle("Pitchstone")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -59,9 +61,9 @@ struct NodeListView: View {
                 } label: {
                     Label("Nuovo nodo", systemImage: "plus")
                 } primaryAction: {
+                    // ⌘N fa lo stesso dai comandi della scena.
                     create(.concept)
                 }
-                .keyboardShortcut("n", modifiers: .command)
             }
         }
     }
@@ -91,12 +93,15 @@ struct NodeListView: View {
 private struct NodeRow: View {
     let node: NodeRecord
     var hit: TextHit?
+    /// Colonna dell'icona che cresce con la dimensione del testo.
+    @ScaledMetric private var iconWidth: CGFloat = 24
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: node.type.symbol)
                 .foregroundStyle(node.isSensitive ? AnyShapeStyle(.pink) : AnyShapeStyle(.tint))
-                .frame(width: 24)
+                .frame(width: iconWidth)
+                .accessibilityLabel(Text(node.type.label))
             VStack(alignment: .leading, spacing: 2) {
                 Text(node.title.isEmpty ? String(localized: "Senza titolo") : node.title)
                     .lineLimit(1)

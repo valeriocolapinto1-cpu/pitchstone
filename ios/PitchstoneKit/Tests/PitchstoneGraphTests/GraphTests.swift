@@ -303,6 +303,28 @@ struct GraphFilterTests {
         #expect(withoutA.edges.count == 1)
         #expect(withoutA.structureKey != graph.structureKey)
     }
+
+    @Test("vicini per l'elenco accessibile: simmetrici, prima i più collegati")
+    func neighbors() {
+        let date = Date()
+        let records = ["hub", "beta", "alfa", "solo"].map {
+            NodeRecord(type: .concept, title: $0, area: .studio, createdAt: date, updatedAt: date, deviceID: "t")
+        }
+        let link = { (s: Int, t: Int) in
+            EdgeRecord(sourceID: records[s].id, targetID: records[t].id, kind: .link, createdAt: date)
+        }
+        // hub è collegato a beta e alfa; beta anche ad alfa.
+        let graph = GraphData(nodes: records, edges: [link(0, 1), link(2, 0), link(1, 2)])
+        let near = graph.neighbors()
+        #expect(near.count == 4)
+        #expect(near[0].map { graph.nodes[$0].title } == ["alfa", "beta"], "stesso grado: per titolo")
+        #expect(near[2].map { graph.nodes[$0].title } == ["beta", "hub"])
+        #expect(near[3].isEmpty)
+        for (i, list) in near.enumerated() {
+            #expect(list.allSatisfy { near[$0].contains(i) }, "un arco vale nei due sensi")
+        }
+        #expect(GraphData(nodes: [], edges: []).neighbors().isEmpty)
+    }
 }
 
 @MainActor

@@ -52,6 +52,8 @@ struct ExamCalendarView: View {
 private struct ExamRow: View {
     let entry: ExamEntry
     let due: Int
+    /// Colonna della data che cresce con la dimensione del testo.
+    @ScaledMetric(relativeTo: .title2) private var dateWidth: CGFloat = 52
 
     var body: some View {
         HStack(spacing: 16) {
@@ -61,9 +63,10 @@ private struct ExamRow: View {
                     Text(date, format: .dateTime.month(.abbreviated)).font(.caption)
                 } else {
                     Image(systemName: "calendar.badge.questionmark").font(.title2)
+                        .accessibilityLabel(Text("Data da decidere"))
                 }
             }
-            .frame(width: 52)
+            .frame(width: dateWidth)
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.node.title.isEmpty ? String(localized: "Senza titolo") : entry.node.title).font(.headline)
                 HStack(spacing: 10) {

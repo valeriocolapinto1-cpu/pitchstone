@@ -74,13 +74,15 @@ struct AttachmentsView: View {
 
 struct AttachmentRow: View {
     let attachment: AttachmentRecord
+    @ScaledMetric(relativeTo: .title2) private var iconWidth: CGFloat = 32
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: attachment.kind == .pdf ? "doc.richtext" : "photo")
                 .font(.title2)
                 .foregroundStyle(.tint)
-                .frame(width: 32)
+                .frame(width: iconWidth)
+                .accessibilityLabel(attachment.kind == .pdf ? Text("PDF") : Text("Immagine"))
             VStack(alignment: .leading, spacing: 2) {
                 Text(attachment.fileName).lineLimit(1)
                 Text(details)

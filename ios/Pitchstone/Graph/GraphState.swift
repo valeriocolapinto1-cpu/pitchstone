@@ -27,6 +27,12 @@ final class GraphState {
     @ObservationIgnored private var laidOutKey: Int?
     @ObservationIgnored private var cachedRevision = -1
     private(set) var graph = GraphData(nodes: [], edges: [])
+    /// Cresce a ogni ⌘F con il grafo aperto: GraphScreen porta il cursore nella ricerca.
+    private(set) var searchFocusRequest = 0
+
+    func requestSearchFocus() {
+        searchFocusRequest += 1
+    }
 
     /// Dati del grafo ricostruiti una sola volta per modifica dell'archivio.
     func refresh(from notes: NotesModel) {

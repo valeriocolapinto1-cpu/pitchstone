@@ -6,6 +6,7 @@ import SwiftUI
 struct PitchstoneApp: App {
     @State private var notes: NotesModel
     @State private var study: StudyModel
+    @State private var commands = CommandCenter()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -32,11 +33,13 @@ struct PitchstoneApp: App {
             RootView()
                 .environment(notes)
                 .environment(study)
+                .environment(commands)
                 .task { await study.retryQueued() }
                 .onChange(of: scenePhase) { _, phase in
                     // Promemoria aggiornati quando si esce: contano i ripassi fatti oggi.
                     if phase == .background { study.scheduleReminders() }
                 }
         }
+        .commands { AppCommands(center: commands) }
     }
 }
