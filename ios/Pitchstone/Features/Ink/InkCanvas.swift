@@ -77,6 +77,9 @@ struct InkCanvas: UIViewRepresentable {
     static func dismantleUIView(_ canvas: PageCanvasView, coordinator: Coordinator) {
         coordinator.toolPicker?.setVisible(false, forFirstResponder: canvas)
         coordinator.toolPicker?.removeObserver(canvas)
+        // La tela nuova si registra in makeUIView; fino ad allora niente da annullare.
+        if coordinator.history.canvas === canvas { coordinator.history.canvas = nil }
+        coordinator.history.refresh()
     }
 
     @MainActor
@@ -101,6 +104,10 @@ struct InkCanvas: UIViewRepresentable {
 /// PKCanvasView con pagina A4 e sfondo a righe o quadretti sotto i tratti.
 final class PageCanvasView: PKCanvasView {
     let pageBackground = PageBackgroundView()
+    /// Un undo manager per tela: quello della finestra sopravvive al cambio di pagina e
+    /// Annulla toglierebbe i tratti di una tela che non c'è più, o le modifiche al testo.
+    private let ownUndoManager = UndoManager()
+    override var undoManager: UndoManager? { ownUndoManager }
 
     override init(frame: CGRect) {
         super.init(frame: frame)

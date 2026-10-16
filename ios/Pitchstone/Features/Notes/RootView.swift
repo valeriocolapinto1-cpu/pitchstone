@@ -8,6 +8,8 @@ struct RootView: View {
     @Environment(NotesModel.self) private var notes
     @Environment(CommandCenter.self) private var commands
     @AppStorage(OnboardingPolicy.storageKey) private var onboardingCompleted = false
+    /// Chiesta dalle Impostazioni: la presentazione si riapre quando il foglio è chiuso.
+    @State private var replayOnboarding = false
     @State private var showingOnboarding = false
     @State private var columns = NavigationSplitViewVisibility.automatic
     @State private var searching = false
@@ -184,9 +186,12 @@ struct RootView: View {
         }
         .sheet(isPresented: $showingSettings, onDismiss: {
             // "Rivedi la presentazione" nelle Impostazioni: si apre a foglio chiuso.
-            if !onboardingCompleted { showingOnboarding = true }
+            if replayOnboarding {
+                replayOnboarding = false
+                showingOnboarding = true
+            }
         }) {
-            SettingsView()
+            SettingsView { replayOnboarding = true }
         }
         .sheet(isPresented: $showingImport) {
             ImportVaultView()
@@ -225,7 +230,7 @@ extension RootView {
     /// perché un foglio non può presentarne un altro.
     private var presentingModal: Bool {
         showingOnboarding || graphOpen != nil || reader != nil || showingQuiz || showingExams || showingBackup
-            || showingTrash || showingSettings || showingImport || importingDocuments
+            || showingTrash || showingSettings || showingImport || importingDocuments || graphState.showingList
     }
 
     private func perform(_ shortcut: AppShortcut) {
