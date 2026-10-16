@@ -1,0 +1,61 @@
+name: ipa
+
+# .ipa non firmata dell'app per iPad, da installare senza Mac con Sideloadly o AltStore
+# (che la firmano con il proprio Apple ID). Si avvia a mano da Actions → ipa → Run workflow,
+# oppure da sola quando cambia il codice iOS su main.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ipa.yml"
+  # Una PR che cambia questo workflow lo prova prima di entrare in main.
+  pull_request:
+    paths:
+      - ".github/workflows/ipa.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Archivio Release senza firma
+        run: >
+          xcodebuild archive
+          -project ios/Pitchstone.xcodeproj
+          -scheme Pitchstone
+          -configuration Release
+          -destination "generic/platform=iOS"
+          -archivePath build/Pitchstone.xcarchive
+          -skipMacroValidation
+          -skipPackagePluginValidation
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGN_IDENTITY=""
+
+      - name: Impacchetta la .ipa
+        run: |
+          app=$(find build/Pitchstone.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -1)
+          test -n "$app"
+          mkdir -p build/ipa/Payload
+          cp -R "$app" build/ipa/Payload/
+          (cd build/ipa && zip -qry ../Pitchstone.ipa Payload)
+          ls -lh build/Pitchstone.ipa
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Pitchstone-ipa
+          path: build/Pitchstone.ipa
+          retention-days: 30
