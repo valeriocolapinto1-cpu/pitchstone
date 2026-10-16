@@ -66,7 +66,7 @@ describe.skipIf(!url || !secretKey || !anonKey)("sync end-to-end", () => {
     const request = new Request(`https://ai-proxy.example${path}`, {
       method: "POST",
       body: JSON.stringify(body),
-      headers: { "cf-access-jwt-assertion": token },
+      headers: { "cf-access-jwt-assertion": token, "content-type": "application/json" },
     });
     const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, env);
     expect(response.status).toBe(200);
@@ -157,7 +157,7 @@ describe.skipIf(!url || !secretKey || !anonKey)("sync end-to-end", () => {
       new Request("https://ai-proxy.example/storage/sign", {
         method: "POST",
         body: JSON.stringify({ action: "download", path: `${attachmentID}/part-000` }),
-        headers: { "cf-access-jwt-assertion": token },
+        headers: { "cf-access-jwt-assertion": token, "content-type": "application/json" },
       }) as Request<unknown, IncomingRequestCfProperties>,
       env,
     );

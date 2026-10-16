@@ -62,6 +62,7 @@ afterEach(() => {
 async function call(path: string, init: RequestInit & { token?: string | null } = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   if (init.token) headers.set("cf-access-jwt-assertion", init.token);
+  if (init.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json");
   const request = new Request(`https://ai-proxy.example${path}`, { ...init, headers });
   return worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, env);
 }
@@ -202,11 +203,31 @@ describe("sync", () => {
     expect((await post("/storage/sign", { action: "upload", path: "../segreto" })).status).toBe(400);
   });
 
+  it("difende dal CSRF senza bloccare l'iPad", async () => {
+    const token = await sign(validPayload());
+    const body = JSON.stringify({ cursor: 0 });
+    // iPad: service token, JSON, niente Origin né Sec-Fetch-Site.
+    expect((await call("/sync/pull", { method: "POST", body, token })).status).toBe(200);
+    // PWA sulla stessa origine.
+    const same = { "sec-fetch-site": "same-origin", "content-type": "application/json; charset=utf-8" };
+    expect((await call("/sync/pull", { method: "POST", body, token, headers: same })).status).toBe(200);
+    for (const site of ["cross-site", "same-site"]) {
+      const headers = { "sec-fetch-site": site, "content-type": "application/json" };
+      expect((await call("/sync/push", { method: "POST", body, token, headers })).status).toBe(403);
+    }
+    for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"]) {
+      expect((await call("/sync/push", { method: "POST", body, token, headers: { "content-type": type } })).status).toBe(415);
+    }
+    const noType = new Request("https://ai-proxy.example/ai/chat", { method: "POST", headers: { "cf-access-jwt-assertion": token } });
+    expect((await worker.fetch(noType as Request<unknown, IncomingRequestCfProperties>, env)).status).toBe(415);
+    expect(rpcCalls()).toHaveLength(2);
+  });
+
   it("restituisce 503 se Supabase non è configurato", async () => {
     const request = new Request("https://ai-proxy.example/sync/pull", {
       method: "POST",
       body: "{}",
-      headers: { "cf-access-jwt-assertion": await sign(validPayload()) },
+      headers: { "cf-access-jwt-assertion": await sign(validPayload()), "content-type": "application/json" },
     });
     const response = await worker.fetch(
       request as Request<unknown, IncomingRequestCfProperties>,
@@ -265,7 +286,7 @@ describe("chat", () => {
     const request = new Request("https://ai-proxy.example/ai/chat", {
       method: "POST",
       body: JSON.stringify(question),
-      headers: { "cf-access-jwt-assertion": await sign(validPayload()) },
+      headers: { "cf-access-jwt-assertion": await sign(validPayload()), "content-type": "application/json" },
     });
     await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, GEMINI_MODEL: "gemini-x" });
     expect(String(geminiCalls()[0][0])).toContain("/models/gemini-x:generateContent");
@@ -312,7 +333,7 @@ describe("chat", () => {
     const request = new Request("https://ai-proxy.example/ai/chat", {
       method: "POST",
       body: JSON.stringify(question),
-      headers: { "cf-access-jwt-assertion": await sign(validPayload()) },
+      headers: { "cf-access-jwt-assertion": await sign(validPayload()), "content-type": "application/json" },
     });
     const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, GEMINI_API_KEY: "" });
     expect(response.status).toBe(503);

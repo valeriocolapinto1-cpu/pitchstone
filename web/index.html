@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pitchstone</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#1c1c1e">
+  <style>
+    :root { color-scheme: light dark; font-family: -apple-system, Segoe UI, sans-serif; }
+    body { margin: 0; display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+    aside { border-right: 1px solid #8884; display: flex; flex-direction: column; }
+    aside header { display: flex; gap: 6px; padding: 8px; }
+    #search { flex: 1; }
+    #list { overflow: auto; flex: 1; margin: 0; padding: 0; list-style: none; }
+    #list li { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #8882; }
+    #list li.active { background: #8883; }
+    main { display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; }
+    #editor { display: flex; flex-direction: column; padding: 12px; gap: 8px; }
+    #body { flex: 1; font-family: Menlo, monospace; }
+    #preview { overflow: auto; padding: 12px 24px; border-left: 1px solid #8884; }
+    #status { font-size: 12px; padding: 8px; opacity: .7; }
+    #rejections { font-size: 12px; padding: 8px; border-top: 1px solid #8884; display: grid; gap: 6px; }
+    #rejections div { display: flex; gap: 6px; align-items: center; }
+    #rejections span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    #blocked { position: fixed; inset: 0; display: grid; place-items: center; background: Canvas; padding: 24px; text-align: center; }
+    #blocked[hidden] { display: none; }
+    .wiki { text-decoration: underline; cursor: pointer; color: #0a84ff; }
+  </style>
+</head>
+<body>
+  <aside>
+    <header><input id="search" placeholder="Cerca (⌘K)"><button id="new" title="Nuovo nodo (⌘N)">＋</button></header>
+    <ul id="list"></ul>
+    <div id="rejections" hidden></div>
+    <div id="status">Solo locale</div>
+  </aside>
+  <main>
+    <section id="editor" hidden>
+      <input id="title" placeholder="Titolo">
+      <div><select id="type"></select> <select id="area"></select> <input id="tags" placeholder="Tag, separati da virgole"> <button id="trash">Cestino</button></div>
+      <textarea id="body"></textarea>
+    </section>
+    <article id="preview"></article>
+  </main>
+  <div id="blocked" hidden>Pitchstone è già aperto in un'altra scheda: chiudila per continuare qui.</div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
