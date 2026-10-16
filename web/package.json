@@ -1,0 +1,20 @@
+{
+  "name": "pitchstone-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.6",
+    "marked": "^16.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite": "^7.1.2",
+    "vitest": "^5.0.4"
+  }
+}
