@@ -35,6 +35,8 @@ targets:
         product: PitchstoneGraph
       - package: PitchstoneKit
         product: PitchstoneImport
+      - package: PitchstoneKit
+        product: PitchstoneAI
     info:
       path: Pitchstone/Resources/Info.plist
       properties:
@@ -59,6 +61,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.pitchstone.ipad
         TARGETED_DEVICE_FAMILY: "2"
         SUPPORTS_MACCATALYST: NO
+        # Foundation Models esiste da iOS 26: su iOS 18 l'app parte senza modello locale.
+        OTHER_LDFLAGS: ["$(inherited)", "-weak_framework", "FoundationModels"]
   PitchstoneTests:
     type: bundle.unit-test
     platform: iOS

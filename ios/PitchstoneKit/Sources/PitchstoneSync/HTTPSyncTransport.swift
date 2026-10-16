@@ -49,7 +49,7 @@ public struct HTTPSyncTransport: SyncTransport {
         return request
     }
 
-    private func send<Response: Decodable>(_ request: URLRequest) async throws -> Response {
+    public func send<Response: Decodable>(_ request: URLRequest) async throws -> Response {
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         // Access risponde con un redirect alla pagina di login se il token non è valido.

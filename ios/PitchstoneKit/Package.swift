@@ -2,7 +2,7 @@
 import PackageDescription
 
 // Logica dell'app separata dal progetto Xcode. PitchstoneSync, PitchstoneNotes,
-// PitchstoneGraph e PitchstoneImport sono Foundation pura e si testano anche su
+// PitchstoneGraph, PitchstoneImport e PitchstoneAI sono Foundation pura e si testano anche su
 // Linux (CI economica); PitchstoneStore usa SwiftData, Network e Security e si
 // compila solo sulle piattaforme Apple.
 let package = Package(
@@ -14,6 +14,7 @@ let package = Package(
         .library(name: "PitchstoneNotes", targets: ["PitchstoneNotes"]),
         .library(name: "PitchstoneGraph", targets: ["PitchstoneGraph"]),
         .library(name: "PitchstoneImport", targets: ["PitchstoneImport"]),
+        .library(name: "PitchstoneAI", targets: ["PitchstoneAI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-markdown.git", exact: "0.8.0"),
@@ -26,6 +27,7 @@ let package = Package(
         .target(
             name: "PitchstoneImport",
             dependencies: ["PitchstoneSync", .product(name: "Markdown", package: "swift-markdown")]),
+        .target(name: "PitchstoneAI", dependencies: ["PitchstoneSync", "PitchstoneNotes"]),
         .testTarget(name: "PitchstoneSyncTests", dependencies: ["PitchstoneSync"]),
         .testTarget(name: "PitchstoneStoreTests", dependencies: ["PitchstoneStore", "PitchstoneSync", "PitchstoneNotes"]),
         .testTarget(name: "PitchstoneNotesTests", dependencies: ["PitchstoneNotes"]),
@@ -33,5 +35,6 @@ let package = Package(
         .testTarget(
             name: "PitchstoneImportTests", dependencies: ["PitchstoneImport", "PitchstoneSync"],
             resources: [.copy("VaultDiEsempio")]),
+        .testTarget(name: "PitchstoneAITests", dependencies: ["PitchstoneAI", "PitchstoneSync", "PitchstoneNotes"]),
     ]
 )

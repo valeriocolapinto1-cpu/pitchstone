@@ -1,3 +1,4 @@
+import PitchstoneAI
 import PitchstoneSync
 import SwiftUI
 import UniformTypeIdentifiers
@@ -14,16 +15,31 @@ struct RootView: View {
     @State private var graphState = GraphState()
     /// Nodo aperto dal grafo, in un foglio sopra il grafo.
     @State private var graphOpen: GraphOpen?
+    @State private var showingChat = false
+    @State private var chatScope = ChatPanel.ChatScope.general
+    @State private var chats = ChatStore()
+    /// Nodo della chat dedicata: segue l'elenco, non le citazioni, così aprire
+    /// una fonte non nasconde la conversazione che la cita.
+    @State private var chatNodeID: UUID?
+    /// Allegato aperto da una citazione, alla pagina citata.
+    @State private var reader: ReaderRequest?
 
     struct GraphOpen: Identifiable {
         var id: UUID
         var editing: Bool
     }
 
+    struct ReaderRequest: Identifiable {
+        var attachment: AttachmentRecord
+        var page: Int?
+        var id: UUID { attachment.id }
+    }
+
     var body: some View {
         NavigationSplitView {
             NodeListView(selection: Binding(get: { selection }, set: { value in
                 selection = value
+                chatNodeID = value
                 // Scegliere un nodo dall'elenco riporta alla nota.
                 if value != nil { showingGraph = false }
             }))
@@ -53,6 +69,10 @@ struct RootView: View {
                             }
                         } label: {
                             Label("Importa", systemImage: "square.and.arrow.down")
+                        }
+                        .labelStyle(.iconOnly)
+                        Button { toggleChat(nil) } label: {
+                            Label("Chat", systemImage: "bubble.left.and.text.bubble.right")
                         }
                         .labelStyle(.iconOnly)
                         Spacer()
@@ -98,10 +118,29 @@ struct RootView: View {
                 }
             }
         }
+        .inspector(isPresented: $showingChat) {
+            NavigationStack {
+                ChatPanel(openNodeID: chatNodeID, scope: $chatScope, general: chats.general) {
+                    chats.chat(for: $0)
+                }
+                .navigationTitle("Chat")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+            .inspectorColumnWidth(min: 320, ideal: 420, max: 600)
+        }
+        .environment(\.openSource, OpenSourceAction { open($0) })
+        .environment(\.openChat, OpenChatAction { toggleChat($0, forceOpen: true) })
+        .fullScreenCover(item: $reader) { request in
+            AttachmentReaderView(attachment: request.attachment, initialPage: request.page)
+        }
         .background {
             // ⌘G passa dall'elenco al grafo e viceversa.
             Button("Grafo") { showingGraph.toggle() }
                 .keyboardShortcut("g", modifiers: .command)
+                .hidden()
+            // ⌘/ apre e chiude la chat.
+            Button("Chat") { toggleChat(nil) }
+                .keyboardShortcut("/", modifiers: .command)
                 .hidden()
         }
         .sheet(isPresented: $showingTrash) {
@@ -128,6 +167,7 @@ struct RootView: View {
             if let first {
                 showingGraph = false
                 selection = first
+                chatNodeID = first
             }
         }
         .alert(
@@ -138,6 +178,62 @@ struct RootView: View {
         } message: {
             Text(notes.errorMessage ?? "")
         }
+    }
+}
+
+extension RootView {
+    /// `nodeID` apre la chat di quel nodo; nil apre la chat generale o la chiude.
+    private func toggleChat(_ nodeID: UUID?, forceOpen: Bool = false) {
+        if let nodeID {
+            graphOpen = nil
+            showingGraph = false
+            selection = nodeID
+            chatNodeID = nodeID
+            chatScope = .node
+        } else if !showingChat {
+            chatScope = .general
+        }
+        showingChat = forceOpen || nodeID != nil ? true : !showingChat
+    }
+
+    /// Una citazione: il nodo si apre a sinistra, un PDF o una foto a tutto schermo.
+    private func open(_ ref: SourceRef) {
+        if ref.kind == .pdf || ref.kind == .image, let id = ref.sourceID,
+           let attachment = notes.attachment(id), attachment.deletedAt == nil {
+            let request = ReaderRequest(attachment: attachment, page: ref.page)
+            if graphOpen != nil {
+                // Il lettore a tutto schermo non si apre sopra un foglio: prima si chiude il foglio.
+                graphOpen = nil
+                Task {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    reader = request
+                }
+            } else {
+                reader = request
+            }
+            return
+        }
+        guard let node = notes.node(ref.nodeID), node.deletedAt == nil else {
+            notes.errorMessage = String(localized: "La fonte citata non esiste più.")
+            return
+        }
+        graphOpen = nil
+        showingGraph = false
+        selection = node.id
+    }
+}
+
+/// Le conversazioni aperte in questa sessione: una generale e una per nodo.
+@MainActor
+final class ChatStore {
+    let general = ChatModel()
+    private var byNode: [UUID: ChatModel] = [:]
+
+    func chat(for nodeID: UUID) -> ChatModel {
+        if let chat = byNode[nodeID] { return chat }
+        let chat = ChatModel(focus: nodeID)
+        byNode[nodeID] = chat
+        return chat
     }
 }
 

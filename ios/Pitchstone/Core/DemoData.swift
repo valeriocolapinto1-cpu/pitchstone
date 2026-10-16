@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import PencilKit
+import PitchstoneAI
 import PitchstoneStore
 import PitchstoneSync
 import UIKit
@@ -10,6 +11,7 @@ import UIKit
 extension NotesModel {
     func loadDemoData() {
         guard activeNodes.isEmpty else { return }
+        chatRouterOverride = ChatRouter(online: DemoChatProvider(), local: nil)
         let notes: [(String, NodeType, Area, [String], String)] = [
             ("Analisi 1", .exam, .studio, ["esame"], """
             # Analisi 1
@@ -137,5 +139,25 @@ extension NotesModel {
         }, creationDate: Date()))
         _ = savePDFAnnotation(InkCodec.data(from: PKDrawing(strokes: [underline])), attachment: attachment, page: 0,
                               layer: nil, loadedFrom: Data())
+    }
+}
+
+/// Risposte fisse per gli screenshot: citano le prime fonti trovate.
+struct DemoChatProvider: ChatProvider {
+    let kind = ChatProviderKind.gemini
+    let budget = TokenBudget.gemini
+
+    func isAvailable() async -> Bool { true }
+
+    func reply(to prompt: ChatPrompt) async throws -> String {
+        try await Task.sleep(for: .milliseconds(300))
+        return """
+        **In breve:** la derivata è il limite del rapporto incrementale [1].
+
+        1. Scrivi il rapporto $\\frac{f(x+h) - f(x)}{h}$.
+        2. Fai tendere $h$ a zero: se il limite esiste, è $f'(x)$ [1][2].
+
+        Esempio: per $f(x) = x^2$ il rapporto vale $2x + h$, quindi $f'(x) = 2x$.
+        """
     }
 }

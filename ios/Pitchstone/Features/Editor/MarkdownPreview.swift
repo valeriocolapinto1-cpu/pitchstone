@@ -1,33 +1,50 @@
+import PitchstoneAI
 import PitchstoneNotes
 import SwiftUI
 
 /// Anteprima del Markdown: blocchi nativi SwiftUI, link tra nodi cliccabili.
 struct MarkdownPreview: View {
+    @Environment(\.openSource) private var openSource
     let text: String
     var onOpenNode: (String) -> Void = { _ in }
 
     var body: some View {
-        let blocks = MarkdownRenderer.render(text)
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                if blocks.isEmpty {
-                    Text("Niente da mostrare")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                    BlockView(block: block)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
+            MarkdownBlocks(text: text, placeholder: true)
+                .padding()
         }
         .environment(\.openURL, OpenURLAction { url in
             if let title = MarkdownText.nodeTitle(from: url) {
                 onOpenNode(title)
                 return .handled
             }
+            // Citazioni di una chat salvata: aprono il nodo o la pagina del PDF.
+            if let ref = Citations.ref(from: url) {
+                openSource(ref)
+                return .handled
+            }
             return .systemAction
         })
+    }
+}
+
+/// I blocchi di un testo Markdown, senza scorrimento: anche nei messaggi della chat.
+struct MarkdownBlocks: View {
+    let text: String
+    var placeholder = false
+
+    var body: some View {
+        let blocks = MarkdownRenderer.render(text)
+        VStack(alignment: .leading, spacing: 12) {
+            if blocks.isEmpty, placeholder {
+                Text("Niente da mostrare")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                BlockView(block: block)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

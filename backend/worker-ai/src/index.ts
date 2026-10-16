@@ -1,9 +1,11 @@
 import { verifyAccessJwt } from "./access";
+import { chat, DEFAULT_MODEL, validateChat } from "./chat";
 import { emptyStorageTrash, signUrl, validateSign } from "./storage";
 import { BadRequest, MAX_BODY_BYTES, rpc, validatePull, validatePush } from "./sync";
 
 export interface Env {
   GEMINI_API_KEY: string;
+  GEMINI_MODEL?: string;
   SUPABASE_URL: string;
   SUPABASE_SECRET_KEY: string;
   ACCESS_TEAM_DOMAIN: string;
@@ -29,7 +31,7 @@ export default {
       return Response.json({ status: "ok" });
     }
 
-    if (pathname !== "/sync/push" && pathname !== "/sync/pull" && pathname !== "/storage/sign") {
+    if (!["/sync/push", "/sync/pull", "/storage/sign", "/ai/chat"].includes(pathname)) {
       return new Response("Not Found", { status: 404 });
     }
 
@@ -41,6 +43,15 @@ export default {
 
     if (request.method !== "POST") {
       return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
+    }
+    if (pathname === "/ai/chat") {
+      if (!env.GEMINI_API_KEY) return Response.json({ error: "Gemini non configurato" }, { status: 503 });
+      try {
+        return await chat(env.GEMINI_API_KEY, env.GEMINI_MODEL || DEFAULT_MODEL, validateChat(await readJson(request)));
+      } catch (error) {
+        if (error instanceof BadRequest) return Response.json({ error: error.message }, { status: 400 });
+        throw error;
+      }
     }
     if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) {
       return Response.json({ error: "sync non configurata" }, { status: 503 });

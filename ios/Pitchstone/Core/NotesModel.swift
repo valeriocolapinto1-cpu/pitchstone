@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import PitchstoneAI
 import PitchstoneImport
 import PitchstoneNotes
 import PitchstoneStore
@@ -36,9 +37,19 @@ final class NotesModel {
     @ObservationIgnored let autoIndex: Bool
     @ObservationIgnored var indexing: Task<Void, Never>?
     @ObservationIgnored var indexAgain = false
+    /// Chat: indice dei frammenti (ricostruito quando cambia `revision`), vettori, modelli.
+    @ObservationIgnored var chatIndex: (revision: Int, index: SemanticIndex)?
+    @ObservationIgnored lazy var chatEmbedder: TextEmbedder? = {
+        let embedder = NLTextEmbedder()
+        return embedder.isAvailable ? embedder : nil
+    }()
+    /// Nei test: modelli finti al posto di Gemini e del modello locale.
+    @ObservationIgnored var chatRouterOverride: ChatRouter?
+    /// Trasporto verso il Worker, anche per Gemini; nil se la sync non è configurata.
+    @ObservationIgnored private(set) var workerTransport: HTTPSyncTransport?
     @ObservationIgnored private var engine: SyncEngine?
     @ObservationIgnored private var autoSync: AutoSync?
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored let defaults: UserDefaults
 
     enum SyncStatus: Equatable {
         case notConfigured
@@ -347,11 +358,13 @@ final class NotesModel {
         autoSync = nil
         engine = nil
         transfer = nil
+        workerTransport = nil
         guard let url = URL(string: workerURL), url.scheme == "https", let credentials = AccessKeychain.load() else {
             syncStatus = .notConfigured
             return
         }
         let transport = HTTPSyncTransport(baseURL: url, credentials: credentials)
+        workerTransport = transport
         let transfer = AttachmentTransfer(transport: transport, files: files)
         self.transfer = transfer
         let engine = SyncEngine(store: store, transport: transport, deviceID: deviceID, attachments: transfer)
