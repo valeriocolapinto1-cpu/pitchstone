@@ -31,6 +31,26 @@ jobs:
       - run: npm run lint
       - run: npm test
 
+  # App web per il PC: tipi, test e build.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
   keepalive:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -75,7 +95,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: backend/worker-ai/package-lock.json
+          cache-dependency-path: |
+            backend/worker-ai/package-lock.json
+            web/package-lock.json
       - name: Test end-to-end della sync (Worker → Supabase)
         working-directory: backend/worker-ai
         shell: bash
@@ -84,6 +106,14 @@ jobs:
           eval "$(supabase status -o env --workdir ..)"
           E2E_REQUIRED=1 E2E_SUPABASE_URL="$API_URL" E2E_SUPABASE_SECRET_KEY="$SECRET_KEY" E2E_SUPABASE_ANON_KEY="$ANON_KEY" \
             npm run test:e2e -- --reporter=verbose
+      - name: Test end-to-end della sync (iPad ↔ PWA)
+        working-directory: web
+        shell: bash
+        run: |
+          npm ci
+          eval "$(supabase status -o env --workdir ../backend)"
+          E2E_REQUIRED=1 E2E_SUPABASE_URL="$API_URL" E2E_SUPABASE_SECRET_KEY="$SECRET_KEY" \
+            npx vitest run test/e2e.test.ts --reporter=verbose
 
   # Logica di sync del client: Foundation pura, gira su Linux a costo 1x.
   swift:
