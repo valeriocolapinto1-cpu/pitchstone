@@ -1,6 +1,6 @@
 # Fase 8: esami, backup ed esportazione
 
-Stato: da iniziare
+Stato: completata ([ADR 0012](../decisioni/0012-esami-backup.md)).
 
 ## Obiettivo
 
@@ -8,11 +8,16 @@ Calendario esami collegato al grafo, backup giornaliero su Supabase senza salute
 
 ## Criteri di completamento
 
-- [ ] Un esame compare nel calendario e nel grafo.
-- [ ] Il backup giornaliero non contiene nodi di salute.
-- [ ] L'esportazione produce file leggibili.
+- [x] Un esame compare nel calendario e nel grafo (`ExamTests`, etichetta con la data nel grafo).
+- [x] Il backup giornaliero non contiene nodi di salute (`backup.test.sql`, `backup.test.ts`, end-to-end con lo storage locale).
+- [x] L'esportazione produce file leggibili (Markdown con frontmatter, PDF, backup cifrato apribile solo con la password).
 
 ## Test
 
-- [ ] Test del filtro di backup.
-- [ ] Test di esportazione.
+- [x] Test del filtro di backup.
+- [x] Test di esportazione.
+
+## Verifica su dispositivo
+
+- [ ] Primo backup giornaliero nel bucket `backups` dopo il deploy del Worker.
+- [ ] Esportazione e ripristino del backup di salute da File.

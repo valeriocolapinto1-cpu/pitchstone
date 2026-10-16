@@ -21,7 +21,7 @@ export function validateSign(body: unknown): { action: SignAction; path: string 
   return { action, path };
 }
 
-function headers(config: SupabaseConfig): Record<string, string> {
+export function headers(config: SupabaseConfig): Record<string, string> {
   const result: Record<string, string> = { apikey: config.secretKey, "content-type": "application/json" };
   // Le chiavi legacy (JWT) vanno anche in Authorization; le nuove sb_secret_ no.
   if (config.secretKey.startsWith("eyJ")) result.authorization = `Bearer ${config.secretKey}`;
@@ -71,9 +71,14 @@ export async function signUrl(
  * Cancella dal bucket i file degli allegati eliminati definitivamente
  * (coda `storage_trash`, riempita da purge_trash). Parte una volta al giorno.
  */
-export async function emptyStorageTrash(config: SupabaseConfig, fetchImpl: typeof fetch = fetch): Promise<number> {
+export async function emptyStorageTrash(
+  config: SupabaseConfig,
+  fetchImpl: typeof fetch = fetch,
+  minAge = "15 days",
+): Promise<number> {
   // 10 allegati per volta: al massimo 1.000 parti, il limite di una cancellazione dello storage.
-  const listed = await rpc(config, "storage_trash_list", { p_limit: 10 }, fetchImpl);
+  // Solo file in coda da più dei 14 giorni dei backup (ADR 0012), che altrimenti li perderebbero.
+  const listed = await rpc(config, "storage_trash_list", { p_limit: 10, p_min_age: minAge }, fetchImpl);
   if (!listed.ok) return 0;
   const queue = (await listed.json()) as { path: string; part_count: number }[];
   if (queue.length === 0) return 0;

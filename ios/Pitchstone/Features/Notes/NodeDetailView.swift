@@ -1,6 +1,8 @@
 import PitchstoneAI
+import PitchstoneImport
 import PitchstoneSync
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Un nodo aperto: titolo, tipo, area, tag e corpo in Markdown.
 /// Il testo si salva da solo dopo una breve pausa e quando si lascia il nodo.
@@ -12,6 +14,13 @@ struct NodeDetailView: View {
     @Environment(\.openSource) private var openSource
     @Environment(StudyModel.self) private var study
     @State private var generatingQuiz = false
+    @State private var exportFile: ExportFile?
+
+    struct ExportFile {
+        var document: DataFile
+        var type: UTType
+        var name: String
+    }
     @State private var quizMessage: String?
     let nodeID: UUID
     let onOpenNode: (String, Area) -> Void
@@ -67,6 +76,13 @@ struct NodeDetailView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(quizMessage ?? "")
+            }
+            .fileExporter(
+                isPresented: Binding(get: { exportFile != nil }, set: { if !$0 { exportFile = nil } }),
+                document: exportFile?.document, contentType: exportFile?.type ?? .data,
+                defaultFilename: exportFile?.name
+            ) { result in
+                if case .failure(let error) = result { notes.errorMessage = error.localizedDescription }
             }
             .sheet(item: $analysisResult) { result in
                 AnalysisSheet(nodeID: nodeID, outcome: result.outcome)
@@ -172,6 +188,9 @@ struct NodeDetailView: View {
                 TextField("Tag, separati da virgole", text: $tags)
                     .textInputAutocapitalization(.never)
                     .font(.callout)
+                if node.type == .exam {
+                    ExamControls(node: node, beforeChange: save)
+                }
                 if node.isSensitive {
                     Label("Solo su questo iPad", systemImage: "lock.fill")
                         .font(.caption)
@@ -245,17 +264,35 @@ struct NodeDetailView: View {
                 let count = notes.attachments(of: nodeID).count
                 Label(count > 0 ? "Allegati (\(count))" : "Allegati", systemImage: count > 0 ? "paperclip.circle.fill" : "paperclip")
             }
-            Button {
-                save()
-                showingHistory = true
+            // Le azioni meno frequenti in un menu: con troppi pulsanti la barra comprime il selettore della vista.
+            Menu {
+                Button {
+                    save()
+                    showingHistory = true
+                } label: {
+                    Label("Storico", systemImage: "clock.arrow.circlepath")
+                }
+                Button("Esporta in Markdown (.md)", systemImage: "square.and.arrow.up") {
+                    save()
+                    guard let node = notes.node(nodeID) else { return }
+                    exportFile = ExportFile(
+                        document: DataFile(data: Data(VaultExport.markdown(node).utf8)), type: .plainText,
+                        name: VaultExport.fileName(node.title) + ".md")
+                }
+                Button("Esporta in PDF", systemImage: "doc.richtext") {
+                    save()
+                    guard let node = notes.node(nodeID) else { return }
+                    exportFile = ExportFile(document: DataFile(data: notes.pdf(of: node)), type: .pdf, name: VaultExport.fileName(node.title))
+                }
+                Divider()
+                Button(role: .destructive) {
+                    save()
+                    notes.trash(nodeID)
+                } label: {
+                    Label("Sposta nel cestino", systemImage: "trash")
+                }
             } label: {
-                Label("Storico", systemImage: "clock.arrow.circlepath")
-            }
-            Button(role: .destructive) {
-                save()
-                notes.trash(nodeID)
-            } label: {
-                Label("Sposta nel cestino", systemImage: "trash")
+                Label("Altro", systemImage: "ellipsis.circle")
             }
         }
     }

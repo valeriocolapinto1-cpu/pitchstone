@@ -17,6 +17,8 @@ struct RootView: View {
     @State private var graphOpen: GraphOpen?
     @State private var showingChat = false
     @State private var showingQuiz = false
+    @State private var showingExams = false
+    @State private var showingBackup = false
     @State private var chatScope = ChatPanel.ChatScope.general
     @State private var chats = ChatStore()
     /// Nodo della chat dedicata: segue l'elenco, non le citazioni, così aprire
@@ -80,10 +82,21 @@ struct RootView: View {
                             Label("Ripasso", systemImage: "rectangle.stack.badge.play")
                         }
                         .labelStyle(.iconOnly)
+                        Button { showingExams = true } label: {
+                            Label("Esami", systemImage: "calendar")
+                        }
+                        .labelStyle(.iconOnly)
                         Spacer()
                         SyncStatusView()
                         Spacer()
-                        Button { showingSettings = true } label: {
+                        Menu {
+                            Button { showingSettings = true } label: {
+                                Label("Impostazioni", systemImage: "gearshape")
+                            }
+                            Button { showingBackup = true } label: {
+                                Label("Backup ed esportazione", systemImage: "externaldrive")
+                            }
+                        } label: {
                             Label("Impostazioni", systemImage: "gearshape")
                         }
                         .labelStyle(.iconOnly)
@@ -154,6 +167,12 @@ struct RootView: View {
         }
         .sheet(isPresented: $showingQuiz) {
             QuizView()
+        }
+        .sheet(isPresented: $showingExams) {
+            ExamCalendarView()
+        }
+        .sheet(isPresented: $showingBackup) {
+            BackupView()
         }
         .sheet(isPresented: $showingTrash) {
             TrashView()

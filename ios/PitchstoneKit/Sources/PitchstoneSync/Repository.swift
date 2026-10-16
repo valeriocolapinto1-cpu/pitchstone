@@ -6,6 +6,8 @@ public enum RepositoryError: Error, Equatable {
     /// sul server. Va creato un nuovo nodo di salute (ADR 0002).
     case syncedNodeCannotBecomeSensitive
     case edgeEndpointMissing
+    /// Un backup di salute non valido, o con dati che non sono di salute.
+    case invalidArchive
 }
 
 /// Modifiche locali: salva nell'archivio e mette in outbox ciò che può andare al server.

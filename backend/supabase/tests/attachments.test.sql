@@ -1,9 +1,9 @@
 begin;
-select plan(25);
+select plan(26);
 
 select ok(not has_table_privilege('anon', 'public.attachments', 'SELECT'), 'anon non legge gli allegati');
 select ok(not has_table_privilege('anon', 'public.storage_trash', 'SELECT'), 'anon non legge la coda dei file');
-select ok(not has_function_privilege('authenticated', 'public.storage_trash_list(integer)', 'EXECUTE'), 'authenticated non legge la coda');
+select ok(not has_function_privilege('authenticated', 'public.storage_trash_list(integer, interval)', 'EXECUTE'), 'authenticated non legge la coda');
 select ok(
   (select not public from storage.buckets where id = 'attachments'),
   'bucket attachments privato');
@@ -106,7 +106,8 @@ select public.purge_trash();
 select is((select count(*)::int from public.attachments where id = '30000000-0000-4000-8000-0000000000a1'), 0, 'allegato eliminato');
 select is((select count(*)::int from public.ink_pages where attachment_id = '30000000-0000-4000-8000-0000000000a1'), 0, 'annotazioni eliminate');
 select is((select count(*)::int from public.purged where entity = 'ink_page'), 2, 'annotazioni nel registro dei purged');
-select is(public.storage_trash_list(10), '[{"path":"30000000-0000-4000-8000-0000000000a1","part_count":3}]'::jsonb, 'file in coda');
+select is(public.storage_trash_list(10), '[]'::jsonb, 'file appena in coda: restano finché i backup li citano');
+select is(public.storage_trash_list(10, interval '0'), '[{"path":"30000000-0000-4000-8000-0000000000a1","part_count":3}]'::jsonb, 'file in coda');
 select ok(not public.attachment_upload_allowed('30000000-0000-4000-8000-0000000000a1'), 'allegato eliminato: niente caricamenti');
 select is((public.sync_push('ipad-b', $$[
   {"entity":"attachment","base_version":4,"data":{"id":"30000000-0000-4000-8000-0000000000a1","node_id":"30000000-0000-4000-8000-000000000001",
@@ -114,7 +115,7 @@ select is((public.sync_push('ipad-b', $$[
    "sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","file_name":"Rinominato.pdf","part_count":3}}
 ]$$)) #>> '{results,0,status}', 'rejected', 'una modifica a un allegato eliminato non lo fa risorgere');
 select is(public.storage_trash_done(array['30000000-0000-4000-8000-0000000000a1']), 1, 'coda confermata');
-select is(public.storage_trash_list(10), '[]'::jsonb, 'coda vuota');
+select is(public.storage_trash_list(10, interval '0'), '[]'::jsonb, 'coda vuota');
 
 select * from finish();
 rollback;
