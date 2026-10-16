@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-9-rifinitura
-Commit: 2a00fe5080426da6cbb669365038091418d27ffc
+Branch: main
+Commit: 8d65c43524b43ddebe90527ed48389ccf57a9204
