@@ -14,7 +14,6 @@ struct GraphScreen: View {
     let state: GraphState
     let onOpen: (UUID, Bool) -> Void
     @FocusState private var searchFocused: Bool
-    @State private var showingList = false
     /// Nodo scelto nell'elenco: si apre quando l'elenco è chiuso, perché un foglio non ne apre un altro.
     @State private var pendingOpen: UUID?
 
@@ -28,7 +27,7 @@ struct GraphScreen: View {
                 .accessibilityLabel(Text("Grafo dei nodi"))
                 .accessibilityValue(Text("\(graph.nodes.count) nodi, \(graph.edges.count) collegamenti"))
                 .accessibilityHint(Text("Apri l'elenco dei nodi per esplorarli uno per uno."))
-                .accessibilityAction(named: Text("Elenco dei nodi")) { showingList = true }
+                .accessibilityAction(named: Text("Elenco dei nodi")) { state.showingList = true }
             controls(graph: graph, matches: state.matches)
         }
         .overlay {
@@ -54,7 +53,7 @@ struct GraphScreen: View {
         .onChange(of: contrast) { state.scene.applyAppearance(traits) }
         .onChange(of: typeSize) { state.scene.applyAppearance(traits) }
         .onChange(of: state.searchFocusRequest) { searchFocused = true }
-        .sheet(isPresented: $showingList, onDismiss: {
+        .sheet(isPresented: Binding(get: { state.showingList }, set: { state.showingList = $0 }), onDismiss: {
             if let id = pendingOpen {
                 pendingOpen = nil
                 onOpen(id, false)
@@ -64,7 +63,7 @@ struct GraphScreen: View {
                 state.scene.focus(on: id)
             } onOpen: { id in
                 pendingOpen = id
-                showingList = false
+                state.showingList = false
             }
         }
     }
@@ -109,7 +108,7 @@ struct GraphScreen: View {
                 }
                 .accessibilityLabel(Text("Mostra tutto il grafo"))
                 Button {
-                    showingList = true
+                    state.showingList = true
                 } label: {
                     Image(systemName: "list.bullet")
                 }

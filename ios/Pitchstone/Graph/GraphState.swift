@@ -27,6 +27,9 @@ final class GraphState {
     @ObservationIgnored private var laidOutKey: Int?
     @ObservationIgnored private var cachedRevision = -1
     private(set) var graph = GraphData(nodes: [], edges: [])
+    /// Elenco accessibile dei nodi aperto: RootView lo conta tra i fogli aperti, così le
+    /// scorciatoie globali non provano a presentare un altro foglio sopra.
+    var showingList = false
     /// Cresce a ogni ⌘F con il grafo aperto: GraphScreen porta il cursore nella ricerca.
     private(set) var searchFocusRequest = 0
 

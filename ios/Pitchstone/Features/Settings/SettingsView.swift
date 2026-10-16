@@ -10,7 +10,8 @@ struct SettingsView: View {
     @State private var clientID = ""
     @State private var clientSecret = ""
     @State private var chatUsesGemini = true
-    @AppStorage(OnboardingPolicy.storageKey) private var onboardingCompleted = false
+    /// "Rivedi la presentazione": RootView la apre quando questo foglio è chiuso.
+    var onReplayOnboarding: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -73,8 +74,7 @@ struct SettingsView: View {
                 }
                 Section {
                     Button("Rivedi la presentazione") {
-                        // La presentazione si apre appena questo foglio è chiuso (RootView).
-                        onboardingCompleted = false
+                        onReplayOnboarding()
                         dismiss()
                     }
                 }
