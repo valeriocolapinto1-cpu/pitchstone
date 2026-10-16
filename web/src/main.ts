@@ -8,6 +8,7 @@ import { AREAS, LABELS, NODE_TYPES, type NodeRecord, titleKey } from "./model";
 import { Repository } from "./repository";
 import { IndexedDBStore } from "./store";
 import { AuthError, HttpTransport, SyncClient } from "./sync";
+import "./style.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const store = new IndexedDBStore();
@@ -21,18 +22,70 @@ function active(): NodeRecord[] {
   return store.nodes().filter((n) => !n.deleted_at).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 }
 
+const dateFormat = new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "short" });
+const timeFormat = new Intl.DateTimeFormat("it-IT", { hour: "2-digit", minute: "2-digit" });
+
+/** Oggi l'ora, prima il giorno: come l'elenco dell'iPad. */
+function shortDate(iso: string): string {
+  const date = new Date(iso);
+  return date.toDateString() === new Date().toDateString() ? timeFormat.format(date) : dateFormat.format(date);
+}
+
+/** Prima riga di testo del Markdown, senza simboli. */
+function snippet(md: string): string {
+  const line = md.split("\n").map((l) => l.replace(/^[#>\-*+\s\d.[\]x]+/i, "").trim()).find(Boolean) ?? "";
+  return line.replace(/\[\[([^\]|#]+)[^\]]*\]\]/g, "$1").replace(/[*_`~]/g, "");
+}
+
 function renderList() {
   const q = titleKey($<HTMLInputElement>("search").value);
-  const list = $("list");
-  list.replaceChildren(...active()
-    .filter((n) => !q || titleKey(`${n.title} ${n.body_md}`).includes(q))
-    .map((n) => {
-      const li = document.createElement("li");
-      li.textContent = n.title || "Senza titolo";
-      li.className = n.id === selected ? "active" : "";
-      li.onclick = () => open(n.id);
-      return li;
-    }));
+  const all = active();
+  const shown = all.filter((n) => !q || titleKey(`${n.title} ${n.body_md}`).includes(q));
+  $("count").textContent = q ? `${shown.length} di ${all.length}` : all.length === 1 ? "1 nodo" : `${all.length} nodi`;
+  const items = shown.map((n) => {
+    const li = document.createElement("li");
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = `var(--${n.area})`;
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = n.title || "Senza titolo";
+    const date = document.createElement("span");
+    date.className = "date";
+    date.textContent = shortDate(n.updated_at);
+    const text = document.createElement("span");
+    text.className = "snippet";
+    text.textContent = snippet(n.body_md) || LABELS.type[n.type];
+    li.append(dot, name, date, text);
+    li.className = n.id === selected ? "active" : "";
+    li.onclick = () => open(n.id);
+    return li;
+  });
+  if (items.length === 0) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = q ? "Nessun risultato" : "Ancora nessun appunto: creane uno con ＋";
+    items.push(li);
+  }
+  $("list").replaceChildren(...items);
+}
+
+function setStatus(state: "ok" | "offline" | "error", ...content: (string | Node)[]) {
+  $("status").dataset.state = state;
+  $("status").replaceChildren(...content);
+}
+
+function updateAreaDot() {
+  $("area-dot").style.background = `var(--${$<HTMLSelectElement>("area").value})`;
+}
+
+type Mode = "write" | "split" | "preview";
+function setMode(mode: Mode) {
+  $("panes").dataset.mode = mode;
+  for (const b of document.querySelectorAll<HTMLButtonElement>(".segmented button")) {
+    b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+  }
+  try { localStorage.setItem("viewMode", mode); } catch { /* solo una preferenza */ }
 }
 
 function renderPreview(node: NodeRecord) {
@@ -42,7 +95,7 @@ function renderPreview(node: NodeRecord) {
 
 /** Salva su disco dopo ogni modifica; un errore resta visibile nello stato. */
 function persist() {
-  store.flush().catch(() => { $("status").textContent = "Errore nel salvataggio locale"; });
+  store.flush().catch(() => { setStatus("error", "Errore nel salvataggio locale"); });
 }
 
 function open(id: string) {
@@ -50,12 +103,15 @@ function open(id: string) {
   const node = store.node(id);
   if (!node) return;
   selected = id;
-  $("editor").hidden = false;
+  $("node").hidden = false;
+  $("empty").hidden = true;
+  document.body.classList.add("open");
   $<HTMLInputElement>("title").value = node.title;
   $<HTMLSelectElement>("type").value = node.type;
   $<HTMLSelectElement>("area").value = node.area;
   $<HTMLInputElement>("tags").value = node.tags.join(", ");
   $<HTMLTextAreaElement>("body").value = node.body_md;
+  updateAreaDot();
   renderPreview(node);
   renderList();
 }
@@ -122,29 +178,31 @@ function renderRejections() {
 
 function closeEditor() {
   selected = undefined;
-  $("editor").hidden = true;
+  $("node").hidden = true;
+  $("empty").hidden = false;
+  document.body.classList.remove("open");
   $("preview").replaceChildren();
 }
 
 /** Mentre si scrive il modulo non si ricarica: si perderebbero cursore e testo. */
 function editing(): boolean {
-  return saveTimer !== undefined || $("editor").contains(document.activeElement);
+  return saveTimer !== undefined || $("node").contains(document.activeElement);
 }
 
 async function runSync() {
   flushSave();
   try {
     const result = await sync.sync();
-    $("status").textContent = result === "skipped" ? $("status").textContent : `Sincronizzato ${new Date().toLocaleTimeString()}`;
+    if (result !== "skipped") setStatus("ok", `Sincronizzato alle ${timeFormat.format(new Date())}`);
   } catch (error) {
     if (error instanceof AuthError) {
       const link = document.createElement("a");
       link.href = "/";
       link.textContent = "Accedi di nuovo";
       link.onclick = (e) => { e.preventDefault(); location.reload(); };
-      $("status").replaceChildren("Sessione scaduta: ", link);
+      setStatus("error", "Sessione scaduta: ", link);
     } else {
-      $("status").textContent = "Offline: le modifiche partono al ritorno della rete";
+      setStatus("offline", "Offline: le modifiche partono al ritorno della rete");
     }
   }
   renderRejections();
@@ -288,6 +346,19 @@ async function main() {
   for (const a of AREAS) $("area").append(new Option(LABELS.area[a], a));
   for (const id of ["title", "type", "area", "tags", "body"]) $(id).addEventListener("input", scheduleSave);
   $("search").addEventListener("input", renderList);
+  $("area").addEventListener("change", updateAreaDot);
+  for (const b of document.querySelectorAll<HTMLButtonElement>(".segmented button")) {
+    b.onclick = () => setMode(b.dataset.mode as Mode);
+  }
+  let savedMode: string | null = null;
+  try { savedMode = localStorage.getItem("viewMode"); } catch { /* vista predefinita */ }
+  setMode(savedMode === "write" || savedMode === "preview" ? savedMode : "split");
+  $("back").onclick = () => {
+    flushSave();
+    persist();
+    closeEditor();
+    renderList();
+  };
   const toggleChat = setupChat();
   $("new").onclick = () => {
     flushSave();
