@@ -56,7 +56,9 @@ public final class TextIndexStore {
 
     /// Impronte di tutte le fonti indicizzate, con una sola lettura.
     public func fingerprints() -> [UUID: String] {
-        let d = FetchDescriptor<ExtractedTextEntity>()
+        var d = FetchDescriptor<ExtractedTextEntity>()
+        // Il testo estratto può pesare megabyte: qui servono solo id e impronta.
+        d.propertiesToFetch = [\.sourceID, \.fingerprint]
         var result: [UUID: String] = [:]
         for entity in (try? context.fetch(d)) ?? [] { result[entity.sourceID] = entity.fingerprint }
         return result
@@ -95,7 +97,8 @@ public final class TextIndexStore {
     }
 
     public func sourceIDs() -> Set<UUID> {
-        let d = FetchDescriptor<ExtractedTextEntity>()
+        var d = FetchDescriptor<ExtractedTextEntity>()
+        d.propertiesToFetch = [\.sourceID]
         return Set(((try? context.fetch(d)) ?? []).map(\.sourceID))
     }
 }

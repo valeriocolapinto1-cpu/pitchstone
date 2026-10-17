@@ -1,5 +1,3 @@
-import DOMPurify from "dompurify";
-import { marked } from "marked";
 import {
   answer, type ChatMessage, corpus, DEFAULT_OLLAMA_MODEL, linkCitations, loadSettings, nodeFromLink,
   OllamaProvider, saveSettings, WorkerProvider,
@@ -44,10 +42,20 @@ function snippet(md: string): string {
   return line.replace(/\[\[([^\]|#]+)[^\]]*\]\]/g, "$1").replace(/[*_`~]/g, "");
 }
 
+/** Testo normalizzato per la ricerca: si ricalcola solo se titolo o corpo sono cambiati. */
+const searchCache = new Map<string, { title: string; body: string; key: string }>();
+function searchKey(n: NodeRecord): string {
+  const hit = searchCache.get(n.id);
+  if (hit && hit.title === n.title && hit.body === n.body_md) return hit.key;
+  const key = titleKey(`${n.title} ${n.body_md}`);
+  searchCache.set(n.id, { title: n.title, body: n.body_md, key });
+  return key;
+}
+
 function renderList() {
   const q = titleKey($<HTMLInputElement>("search").value);
   const all = active();
-  const shown = all.filter((n) => !q || titleKey(`${n.title} ${n.body_md}`).includes(q));
+  const shown = q ? all.filter((n) => searchKey(n).includes(q)) : all;
   $("count").textContent = q ? `${shown.length} di ${all.length}` : all.length === 1 ? "1 nodo" : `${all.length} nodi`;
   const items = shown.map((n) => {
     const li = document.createElement("li");
@@ -99,9 +107,24 @@ function setMode(next: Mode) {
   try { localStorage.setItem("viewMode", next); } catch { /* solo una preferenza */ }
 }
 
-function renderPreview(node: NodeRecord) {
+/** marked e DOMPurify si caricano al primo uso: non pesano sull'avvio. */
+type Markdown = { sanitize: (html: string) => string; parse: (md: string) => string };
+let markdownReady: Promise<Markdown> | undefined;
+function markdown(): Promise<Markdown> {
+  markdownReady ??= Promise.all([import("dompurify"), import("marked")]).then(([purify, md]) => ({
+    sanitize: (html) => purify.default.sanitize(html),
+    parse: (text) => md.marked.parse(text) as string,
+  }));
+  return markdownReady;
+}
+
+let previewToken = 0;
+async function renderPreview(node: NodeRecord) {
+  const token = ++previewToken;
+  const { sanitize, parse } = await markdown();
+  if (token !== previewToken) return;
   const md = node.body_md.replace(/\[\[([^\]|#\n]+)(?:[#|][^\]\n]*)?\]\]/g, (_, t: string) => `<span class="wiki" data-title="${t.replace(/"/g, "")}">${t}</span>`);
-  $("preview").innerHTML = DOMPurify.sanitize(`<h1>${DOMPurify.sanitize(node.title)}</h1>` + (marked.parse(md) as string));
+  $("preview").innerHTML = sanitize(`<h1>${sanitize(node.title)}</h1>` + parse(md));
 }
 
 /** Salva su disco dopo ogni modifica; un errore resta visibile nello stato. */
@@ -321,7 +344,8 @@ async function ask(question: string) {
     if (controller.signal.aborted) return;
     chatHistory.push({ role: "user", text: question }, { role: "assistant", text: reply.text });
     const body = document.createElement("div");
-    body.innerHTML = DOMPurify.sanitize(marked.parse(linkCitations(reply.text, reply.citations)) as string);
+    const { sanitize, parse } = await markdown();
+    body.innerHTML = sanitize(parse(linkCitations(reply.text, reply.citations)));
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.textContent = reply.fallbackReason ? `${reply.providerLabel} · locale non usato: ${reply.fallbackReason}` : reply.providerLabel;
@@ -470,6 +494,8 @@ function setupAccount() {
 async function main() {
   await holdTab();
   await store.load();
+  // A riposo, dopo l'avvio: l'anteprima funziona anche offline senza pesare sul primo disegno.
+  setTimeout(() => { void markdown(); }, 2000);
   if (!store.persistent) {
     const warning = $("storage-warning");
     warning.textContent = `L'archivio locale non è disponibile (${store.failure}): gli appunti restano solo finché la scheda è aperta.`;
@@ -480,7 +506,11 @@ async function main() {
   for (const t of NODE_TYPES) $("type").append(new Option(LABELS.type[t], t));
   for (const a of AREAS) $("area").append(new Option(LABELS.area[a], a));
   for (const id of ["title", "type", "area", "tags", "body"]) $(id).addEventListener("input", scheduleSave);
-  $("search").addEventListener("input", renderList);
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  $("search").addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(renderList, 150);
+  });
   $("area").addEventListener("change", updateAreaDot);
   for (const b of document.querySelectorAll<HTMLButtonElement>("#view-mode button")) {
     b.onclick = () => setMode(b.dataset.mode as Mode);

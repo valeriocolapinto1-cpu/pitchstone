@@ -15,15 +15,19 @@ public struct SemanticIndex: Sendable {
     /// Vettori per impronta del testo: un testo uguale non si ricalcola.
     public private(set) var vectors: [String: [Float]]
     private let normalized: [String]
+    /// Impronta di ogni frammento, calcolata una volta sola: `search` non rifà lo SHA a ogni domanda.
+    private let keys: [String]
 
     /// `previous` presta i vettori già calcolati per i testi che non sono cambiati.
     public init(chunks: [Chunk], embedder: TextEmbedder?, previous: SemanticIndex? = nil) {
         self.chunks = chunks
         normalized = chunks.map { TextSearch.normalize($0.title + " " + $0.text) }
+        let keys = chunks.map(Self.key)
+        self.keys = keys
         var vectors: [String: [Float]] = [:]
         if let embedder {
-            for chunk in chunks {
-                let key = Self.key(chunk)
+            for (index, chunk) in chunks.enumerated() {
+                let key = keys[index]
                 if vectors[key] != nil { continue }
                 if let old = previous?.vectors[key] {
                     vectors[key] = old
@@ -52,7 +56,7 @@ public struct SemanticIndex: Sendable {
                 lexical = Double(found) / Double(words.count)
             }
             var semantic = 0.0
-            if let queryVector, let vector = vectors[Self.key(chunk)] {
+            if let queryVector, let vector = vectors[keys[index]] {
                 semantic = max(0, Self.cosine(queryVector, vector))
             }
             var score = queryVector == nil ? lexical : 0.6 * semantic + 0.4 * lexical
