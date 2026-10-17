@@ -39,6 +39,29 @@ export async function ping({ supabaseUrl, anonKey, fetchImpl = fetch }) {
   assertValidResponse(response.status, body);
 }
 
+/** Ore massime dall'ultimo backup riuscito prima di dare l'allarme. */
+export const MAX_BACKUP_AGE_HOURS = 36;
+
+// L'unica altra cosa che la chiave pubblica può leggere: da quante ore è stato fatto l'ultimo backup
+// (nient'altro dei dati: la funzione restituisce solo data ed età).
+export async function checkBackupAge({ supabaseUrl, anonKey, fetchImpl = fetch, maxHours = MAX_BACKUP_AGE_HOURS }) {
+  const response = await fetchImpl(new URL("/rest/v1/rpc/backup_status", supabaseUrl), {
+    method: "POST",
+    headers: { apikey: anonKey, accept: "application/json", "content-type": "application/json" },
+    body: "{}",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (response.status !== 200) throw new Error(`backup_status ha risposto ${response.status}`);
+  const status = await response.json();
+  if (status?.age_hours === null || status?.age_hours === undefined) {
+    throw new Error("nessun backup è mai stato completato");
+  }
+  if (status.age_hours > maxHours) {
+    throw new Error(`l'ultimo backup ha ${status.age_hours} ore (massimo ${maxHours})`);
+  }
+  return status.age_hours;
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     await ping({
@@ -46,6 +69,11 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
       anonKey: process.env.SUPABASE_ANON_KEY,
     });
     console.log("Keep-alive riuscito");
+    const hours = await checkBackupAge({
+      supabaseUrl: process.env.SUPABASE_URL,
+      anonKey: process.env.SUPABASE_ANON_KEY,
+    });
+    console.log(`Ultimo backup: ${hours} ore fa`);
   } catch (error) {
     console.error(`Keep-alive fallito: ${error.message}`);
     process.exitCode = 1;
