@@ -39,6 +39,17 @@ public protocol AttachmentFileStore: Sendable {
     func read(_ id: UUID) throws -> Data
     func write(_ data: Data, for id: UUID) throws
     func remove(_ id: UUID)
+    /// Parti già caricate nel bucket per questo contenuto: un caricamento interrotto riprende da dove era arrivato
+    /// invece di rimandare tutto. Un archivio che non le ricorda le rimanda (si può: l'upload sovrascrive).
+    func uploadedParts(of id: UUID, sha256: String) -> Set<Int>
+    func markUploaded(part: Int, of id: UUID, sha256: String)
+    func clearUploaded(of id: UUID)
+}
+
+extension AttachmentFileStore {
+    public func uploadedParts(of id: UUID, sha256: String) -> Set<Int> { [] }
+    public func markUploaded(part: Int, of id: UUID, sha256: String) {}
+    public func clearUploaded(of id: UUID) {}
 }
 
 /// File in una cartella (Application Support sull'iPad).
@@ -68,7 +79,27 @@ public struct DirectoryAttachmentFiles: AttachmentFileStore {
         try data.write(to: url(for: id), options: .atomic)
         #endif
     }
-    public func remove(_ id: UUID) { try? FileManager.default.removeItem(at: url(for: id)) }
+    public func remove(_ id: UUID) {
+        try? FileManager.default.removeItem(at: url(for: id))
+        clearUploaded(of: id)
+    }
+
+    // Le parti già caricate stanno in un file accanto: "<sha256> <indici separati da virgole>".
+    private func markerURL(_ id: UUID) -> URL { directory.appendingPathComponent(id.uuidString.lowercased() + ".parts") }
+
+    public func uploadedParts(of id: UUID, sha256: String) -> Set<Int> {
+        guard let text = try? String(contentsOf: markerURL(id), encoding: .utf8) else { return [] }
+        let fields = text.split(separator: " ", maxSplits: 1).map(String.init)
+        guard fields.count == 2, fields[0] == sha256 else { return [] }
+        return Set(fields[1].split(separator: ",").compactMap { Int($0) })
+    }
+
+    public func markUploaded(part: Int, of id: UUID, sha256: String) {
+        let parts = uploadedParts(of: id, sha256: sha256).union([part]).sorted()
+        try? "\(sha256) \(parts.map(String.init).joined(separator: ","))".write(to: markerURL(id), atomically: true, encoding: .utf8)
+    }
+
+    public func clearUploaded(of id: UUID) { try? FileManager.default.removeItem(at: markerURL(id)) }
 }
 
 /// Canale per i file nel bucket: il Worker firma, il trasferimento va diretto a Supabase.
@@ -94,7 +125,7 @@ public struct AttachmentTransfer: Sendable {
         self.files = files
     }
 
-    /// Carica tutte le parti del file locale. Ripetibile: le parti già presenti si sovrascrivono.
+    /// Carica le parti del file locale. Ripetibile: le parti già caricate in un tentativo interrotto si saltano.
     public func upload(_ attachment: AttachmentRecord) async throws {
         guard files.exists(attachment.id) else { throw AttachmentError.missingLocalFile }
         // Il file è mappato in memoria: si copia una parte alla volta, non tutto il file.
@@ -103,11 +134,14 @@ public struct AttachmentTransfer: Sendable {
         guard !ranges.isEmpty, ranges.count == attachment.partCount, data.count == attachment.sizeBytes else {
             throw AttachmentError.corrupted
         }
-        for (index, range) in ranges.enumerated() {
+        let done = files.uploadedParts(of: attachment.id, sha256: attachment.sha256)
+        for (index, range) in ranges.enumerated() where !done.contains(index) {
             let url = try await transport.signedURL(upload: true, path: AttachmentParts.path(of: attachment, part: index))
             let part = data.subdata(in: (data.startIndex + range.lowerBound)..<(data.startIndex + range.upperBound))
             try await transport.put(part, to: url)
+            files.markUploaded(part: index, of: attachment.id, sha256: attachment.sha256)
         }
+        files.clearUploaded(of: attachment.id)
     }
 
     /// Il file locale, scaricandolo e ricomponendolo se manca. Un file che non torna

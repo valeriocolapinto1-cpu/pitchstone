@@ -18,6 +18,14 @@ public struct HTTPError: Error, Equatable {
     public var status: Int
 }
 
+/// Il Worker chiede una versione più recente dell'app (426).
+public struct OutdatedAppError: Error, Equatable, CustomStringConvertible {
+    public var description: String { "Aggiorna l'app: il server non supporta più questa versione." }
+}
+
+/// Versione del contratto della sincronizzazione (contract/README.md), mandata in `X-Pitchstone-Api`.
+public let apiVersion = 1
+
 /// Un URL firmato che non punta dove deve: schema o host non ammessi.
 public struct UntrustedURLError: Error, Equatable {
     public var host: String
@@ -110,6 +118,7 @@ public struct HTTPSyncTransport: SyncTransport {
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(String(apiVersion), forHTTPHeaderField: "X-Pitchstone-Api")
         request.setValue(credentials.clientID, forHTTPHeaderField: "CF-Access-Client-Id")
         request.setValue(credentials.clientSecret, forHTTPHeaderField: "CF-Access-Client-Secret")
         request.httpBody = try WireCoding.encoder().encode(body)
@@ -119,7 +128,8 @@ public struct HTTPSyncTransport: SyncTransport {
     public func send<Response: Decodable>(_ request: URLRequest) async throws -> Response {
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        // Access risponde con un redirect alla pagina di login se il token non è valido.
+        // Access risponde con un redirect alla pagina di login se il token non è valido (qui non si segue).
+        if status == 426 { throw OutdatedAppError() }
         guard status == 200 else { throw HTTPError(status: status) }
         return try WireCoding.decoder().decode(Response.self, from: data)
     }

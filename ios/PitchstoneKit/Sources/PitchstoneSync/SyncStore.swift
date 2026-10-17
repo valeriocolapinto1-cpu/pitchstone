@@ -39,6 +39,11 @@ public protocol SyncStore: AnyObject {
 
     /// Ultimo server_seq ricevuto.
     var cursor: Int64 { get set }
+    /// Epoca della sincronizzazione vista l'ultima volta (0 = ancora sconosciuta).
+    var epoch: Int64 { get set }
+    /// Vero se l'ultimo salvataggio su disco è fallito e il contesto è stato annullato: la sync non deve
+    /// far avanzare il cursore su modifiche che non sono state salvate.
+    var saveFailed: Bool { get set }
 
     /// Esegue molte modifiche come un'unica transazione (per esempio un import):
     /// un solo salvataggio alla fine invece di uno per record.
@@ -58,6 +63,8 @@ public final class InMemoryStore: SyncStore {
     private var attachments: [UUID: AttachmentRecord] = [:]
     private var outbox: [PendingChange] = []
     public var cursor: Int64 = 0
+    public var epoch: Int64 = 0
+    public var saveFailed = false
 
     public init() {}
 

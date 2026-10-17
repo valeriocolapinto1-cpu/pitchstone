@@ -274,6 +274,11 @@ final class FakeTransport: SyncTransport, StorageTransport, @unchecked Sendable 
     var afterPush: (@Sendable () async -> Void)?
     /// Eseguito prima che il server riceva il push (richiesta già partita).
     var beforePush: (@Sendable () async -> Void)?
+    /// Dopo questo numero di caricamenti riusciti la rete cade (nil = mai).
+    var putLimit: Int?
+    private var _puts = 0
+    /// Caricamenti di parti arrivati al server.
+    var putCount: Int { lock.withLock { _puts } }
 
     init(server: FakeServer) {
         self.server = server
@@ -303,6 +308,12 @@ final class FakeTransport: SyncTransport, StorageTransport, @unchecked Sendable 
 
     func put(_ data: Data, to url: URL) async throws {
         guard online, url.host == "upload" else { throw URLError(.notConnectedToInternet) }
+        let allowed = lock.withLock { () -> Bool in
+            if let putLimit, _puts >= putLimit { return false }
+            _puts += 1
+            return true
+        }
+        guard allowed else { throw URLError(.networkConnectionLost) }
         try server.store(data, at: String(url.path.dropFirst()))
     }
 
@@ -326,7 +337,19 @@ final class MemoryFiles: AttachmentFileStore, @unchecked Sendable {
         }
     }
     func write(_ data: Data, for id: UUID) throws { lock.withLock { files[id] = data } }
-    func remove(_ id: UUID) { lock.withLock { files[id] = nil } }
+    func remove(_ id: UUID) { lock.withLock { files[id] = nil; markers[id] = nil } }
+
+    private var markers: [UUID: (sha: String, parts: Set<Int>)] = [:]
+    func uploadedParts(of id: UUID, sha256: String) -> Set<Int> {
+        lock.withLock { markers[id]?.sha == sha256 ? markers[id]?.parts ?? [] : [] }
+    }
+    func markUploaded(part: Int, of id: UUID, sha256: String) {
+        lock.withLock {
+            let known = markers[id]?.sha == sha256 ? markers[id]?.parts ?? [] : []
+            markers[id] = (sha256, known.union([part]))
+        }
+    }
+    func clearUploaded(of id: UUID) { lock.withLock { markers[id] = nil } }
 }
 
 /// Un dispositivo: archivio locale, repository e motore di sync.

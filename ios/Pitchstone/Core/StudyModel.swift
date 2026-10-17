@@ -38,6 +38,9 @@ final class StudyModel {
             targetQuizzes: defaults.object(forKey: "goalQuizzes") as? Int ?? 100,
             targetMinutes: defaults.object(forKey: "goalMinutes") as? Int ?? 120)
         reload()
+        store.onError = { [weak notes] error in
+            notes?.errorMessage = String(localized: "Salvataggio non riuscito: \(error.localizedDescription)")
+        }
         // Un nodo confermato come dato di salute porta via i quiz nati dal suo testo.
         notes.onHealthConfirmed = { [weak self] id in self?.deleteQuizzes(of: id) }
     }
