@@ -21,6 +21,14 @@
     <ul id="list"></ul>
     <div id="rejections" hidden></div>
     <div id="status">Solo locale</div>
+    <details id="account">
+      <summary>Dati e privacy</summary>
+      <label><input type="checkbox" id="sync-enabled"> Sincronizzazione attiva</label>
+      <button id="export-all" class="ghost">Esporta tutto (JSON)</button>
+      <button id="clear-local" class="ghost">Cancella dati locali</button>
+      <button id="logout" class="ghost">Esci</button>
+      <button id="erase-server" class="ghost danger">Cancella tutto dal server…</button>
+    </details>
   </aside>
   <main>
     <div id="empty">
@@ -40,6 +48,7 @@
         <span class="spacer"></span>
         <button id="trash" class="ghost danger">Sposta nel cestino</button>
       </div>
+      <div id="health" role="status" hidden></div>
       <div id="editor">
         <div class="meta">
           <span id="area-dot" aria-hidden="true"></span>
@@ -64,6 +73,7 @@
     <div id="chat-log"></div>
     <form id="chat-form"><textarea id="chat-input" placeholder="Chiedi qualcosa sui tuoi appunti" rows="2"></textarea><button id="chat-send" class="primary">Invia</button></form>
   </section>
+  <div id="storage-warning" role="alert" hidden></div>
   <div id="blocked" hidden>Pitchstone è già aperto in un'altra scheda: chiudila per continuare qui.</div>
   <script type="module" src="/src/main.ts"></script>
 </body>

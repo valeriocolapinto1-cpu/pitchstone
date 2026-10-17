@@ -1,6 +1,7 @@
 // Tutor sugli appunti per il PC (ADR 0013): frammenti dei nodi, ricerca per
 // parole, prompt con fonti numerate come sull'iPad (PitchstoneAI/Prompt.swift), poi il
 // modello locale del PC (Ollama su localhost) o, se è spento, Gemini attraverso il Worker.
+import { assess } from "./health";
 import type { NodeRecord } from "./model";
 
 export interface Chunk {
@@ -32,9 +33,10 @@ export function isSensitive(node: { type: string; area: string }): boolean {
   return node.type === "health" || node.area === "salute";
 }
 
-export function corpus(nodes: NodeRecord[]): Chunk[] {
+/** `blocked`: nodi che non devono finire in nessun prompt (solo locali o sospetti di salute). */
+export function corpus(nodes: NodeRecord[], blocked: (node: NodeRecord) => boolean = () => false): Chunk[] {
   return nodes
-    .filter((n) => !n.deleted_at && !isSensitive(n) && !n.tags.includes(CHAT_TAG))
+    .filter((n) => !n.deleted_at && !isSensitive(n) && !n.tags.includes(CHAT_TAG) && !blocked(n))
     .flatMap((n) => chunks(n));
 }
 
@@ -398,16 +400,20 @@ export interface ChatReply {
 export class ChatUnavailableError extends Error {}
 
 /**
- * Prima il modello locale del PC; se è spento o fallisce, Gemini attraverso il Worker.
- * Con `localOnly` gli appunti non escono mai dal PC: senza Ollama la chat si ferma con un errore.
+ * Prima il modello locale del PC; se è spento o fallisce, Gemini attraverso il Worker, ma solo dopo
+ * una conferma esplicita (`confirmOnline`): mai un ripiego in silenzio. Con `localOnly` gli appunti non
+ * escono mai dal PC: senza Ollama la chat si ferma con un errore. Una domanda che sembra riguardare la
+ * salute (o è in una lingua che il rilevatore non conosce) resta sempre sul PC.
  */
 export async function answer(
   question: string,
   history: ChatMessage[],
   allChunks: Chunk[],
   providers: { local: ChatProvider; online: ChatProvider },
-  options: { localOnly: boolean; signal?: AbortSignal },
+  options: { localOnly: boolean; signal?: AbortSignal; confirmOnline?: (reason: string) => Promise<boolean> },
 ): Promise<ChatReply> {
+  const sensitiveQuestion = assess([...history.filter((m) => m.role === "user").map((m) => m.text), question].join("\n")).suspected;
+  const localOnly = options.localOnly || sensitiveQuestion;
   const candidates = search(question, allChunks);
   const run = async (provider: ChatProvider, fallbackReason?: string): Promise<ChatReply> => {
     const prompt = buildPrompt(question, history, candidates, provider.budget);
@@ -431,11 +437,17 @@ export async function answer(
       reason = error instanceof Error ? error.message : String(error);
     }
   }
-  if (options.localOnly) {
-    throw new ChatUnavailableError(`Modello locale non disponibile (${reason}). Solo locale è attivo: Gemini non viene usato.`);
+  if (localOnly) {
+    const why = sensitiveQuestion && !options.localOnly
+      ? "La domanda sembra riguardare la salute: resta sul PC e Gemini non viene usato."
+      : "Solo locale è attivo: Gemini non viene usato.";
+    throw new ChatUnavailableError(`Modello locale non disponibile (${reason}). ${why}`);
   }
   const offline = await providers.online.unavailable();
   if (offline) throw new ChatUnavailableError(`Nessun modello disponibile: ${reason}; Gemini ${offline}.`);
+  if (!options.confirmOnline || !(await options.confirmOnline(reason))) {
+    throw new ChatUnavailableError(`Modello locale non disponibile (${reason}). Invio a Gemini non confermato.`);
+  }
   return run(providers.online, reason);
 }
 
@@ -446,13 +458,16 @@ export interface ChatSettings {
   localOnly: boolean;
 }
 
-/** Preferenze del PC in localStorage: modello di Ollama e "solo locale". */
+/**
+ * Preferenze del PC in localStorage: modello di Ollama e "solo locale". Il predefinito è solo locale:
+ * Gemini si usa solo se l'utente lo sceglie, e anche allora con una conferma a ogni invio.
+ */
 export function loadSettings(storage: Pick<Storage, "getItem">): ChatSettings {
   let model = DEFAULT_OLLAMA_MODEL;
-  let localOnly = false;
+  let localOnly = true;
   try {
     model = storage.getItem("chat.ollamaModel")?.trim() || DEFAULT_OLLAMA_MODEL;
-    localOnly = storage.getItem("chat.localOnly") === "1";
+    localOnly = storage.getItem("chat.localOnly") !== "0";
   } catch {
     // Archivio non disponibile: valgono i predefiniti.
   }

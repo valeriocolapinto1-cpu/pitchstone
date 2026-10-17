@@ -510,3 +510,22 @@ main {
   #preview { padding: 16px; }
   .segmented [data-mode="split"] { display: none; }
 }
+
+/* Privacy: avviso sopra il testo, dati e privacy in fondo all'elenco, archivio locale non disponibile. */
+#health {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin: 8px 16px 0; padding: 8px 12px; border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--text); font-size: 13px;
+}
+#health[hidden] { display: none; }
+#health span { flex: 1 1 260px; }
+#health button { padding: 3px 10px; font-size: 12px; }
+#account { padding: 6px 12px 10px; font-size: 12px; color: var(--muted); }
+#account summary { cursor: pointer; padding: 4px 0; }
+#account button, #account label { display: block; margin-top: 6px; }
+#account button { padding: 3px 8px; font-size: 12px; }
+#storage-warning {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 20; padding: 8px 16px; text-align: center;
+  background: var(--danger); color: #fff; font-size: 13px;
+}
+#storage-warning[hidden] { display: none; }

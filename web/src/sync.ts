@@ -18,6 +18,8 @@ const PUSH_ORDER: Record<Entity, number> = { node: 0, ink_page: 1, edge: 2 };
 export interface Transport {
   push(body: { device_id: string; changes: unknown[] }): Promise<{ results: PushResult[] }>;
   pull(body: { cursor: number; limit: number }): Promise<{ changes: { entity: string; data: unknown }[]; cursor: number; has_more: boolean }>;
+  /** Toglie una nota dal server con storico, archi e pagine (era sincronizzata e non deve più esserlo). */
+  redact?(id: string): Promise<void>;
 }
 
 /** Sessione di Cloudflare Access scaduta: serve un nuovo login, non è un problema di rete. */
@@ -47,6 +49,7 @@ export class HttpTransport implements Transport {
   pull(body: { cursor: number; limit: number }) {
     return this.post<{ changes: { entity: string; data: unknown }[]; cursor: number; has_more: boolean }>("/sync/pull", body);
   }
+  async redact(id: string) { await this.post("/sync/redact", { id }); }
 }
 
 /**
@@ -63,12 +66,15 @@ export class SyncClient {
     private store: Store,
     private transport: Transport,
     private deviceId: string,
+    /** Nodi che non devono partire (solo locali o sospetti di salute): le loro modifiche restano in outbox. */
+    private blocked: (nodeId: string) => boolean = () => false,
   ) {}
 
   async sync(): Promise<{ pushed: number; pulled: number } | "skipped"> {
     if (this.running) return "skipped";
     this.running = true;
     try {
+      await this.redactAll();
       const pushed = await this.pushAll();
       const pulled = await this.pullAll();
       return { pushed, pulled };
@@ -124,6 +130,53 @@ export class SyncClient {
     this.store.remove("node", id);
   }
 
+  /** Toglie dal server le note diventate solo locali; quelle che non ci riescono restano in coda. */
+  private async redactAll(): Promise<void> {
+    if (!this.transport.redact) return;
+    for (const id of this.store.redactQueue()) {
+      await this.transport.redact(id);
+      this.store.unqueueRedact(id);
+      this.forget(id);
+    }
+  }
+
+  /** Il server non ha più il nodo: in locale diventa un record mai sincronizzato (versione 0, base nulla). */
+  private forget(id: string) {
+    const node = this.store.node(id);
+    if (node) this.store.saveNode({ ...node, version: 0 });
+    this.rebase("node", id);
+    for (const edge of this.store.edges()) {
+      if (edge.source_id !== id && edge.target_id !== id) continue;
+      this.store.saveEdge({ ...edge, version: 0 });
+      this.rebase("edge", edge.id);
+    }
+    for (const page of this.store.extras("ink_page")) {
+      if (page.node_id !== id) continue;
+      this.store.saveExtra("ink_page", { ...page, version: 0 });
+      this.rebase("ink_page", page.id);
+    }
+  }
+
+  private rebase(entity: Entity, id: string) {
+    const pending = this.store.pendingChange(entity, id);
+    this.store.savePending({ entity, id, baseVersion: null, revision: pending?.revision ?? Date.now(), rejection: undefined });
+  }
+
+  /** La voce riguarda un nodo che non deve partire? Un arco o una pagina seguono i loro nodi. */
+  private isBlocked(change: PendingChange): boolean {
+    switch (change.entity) {
+      case "node": return this.blocked(change.id);
+      case "edge": {
+        const edge = this.store.edge(change.id);
+        return !!edge && (this.blocked(edge.source_id) || this.blocked(edge.target_id));
+      }
+      case "ink_page": {
+        const page = this.store.extra("ink_page", change.id);
+        return !!page && !!page.node_id && this.blocked(page.node_id);
+      }
+    }
+  }
+
   private record(change: PendingChange): SyncRecord | undefined {
     switch (change.entity) {
       case "node": return this.store.node(change.id);
@@ -163,6 +216,8 @@ export class SyncClient {
         this.store.removePending(pending.entity, pending.id);
         continue;
       }
+      // Resta in outbox finché l'utente non cambia idea: non parte mai.
+      if (this.isBlocked(pending)) continue;
       const change = { entity: pending.entity, base_version: pending.baseVersion, data: record };
       const size = new TextEncoder().encode(JSON.stringify(change)).length;
       // Una voce che da sola supera il limite non passerebbe mai dal Worker:
@@ -285,11 +340,17 @@ export class SyncClient {
       case "purged": {
         const { entity: kind, id } = data as { entity: string; id: string };
         if (kind === "node") {
+          // Un nodo tenuto solo in locale è stato tolto dal server apposta: qui resta.
+          if (this.blocked(id) && this.store.node(id)) this.forget(id);
           // Anche gli archi solo locali verso il nodo seguono il nodo, come sull'iPad.
-          this.removeNode(id);
+          else this.removeNode(id);
         } else if (kind === "edge" || kind === "ink_page") {
-          this.store.removePending(kind, id);
-          this.store.remove(kind, id);
+          const edge = kind === "edge" ? this.store.edge(id) : undefined;
+          const anchors = kind === "edge" ? [edge?.source_id, edge?.target_id] : [this.store.extra("ink_page", id)?.node_id];
+          if (!anchors.some((nodeId) => nodeId && this.blocked(nodeId))) {
+            this.store.removePending(kind, id);
+            this.store.remove(kind, id);
+          }
         } else if (kind === "attachment") {
           this.store.remove(kind, id);
         }

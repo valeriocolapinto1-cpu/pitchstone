@@ -4,8 +4,10 @@ import {
   answer, type ChatMessage, corpus, DEFAULT_OLLAMA_MODEL, linkCitations, loadSettings, nodeFromLink,
   OllamaProvider, saveSettings, WorkerProvider,
 } from "./chat";
+import { clearLocal, ERASE_CONFIRMATION, eraseServer, exportEverything } from "./account";
 import { InkEditor } from "./inkEditor";
-import { AREAS, LABELS, NODE_TYPES, type NodeRecord, titleKey } from "./model";
+import { AREAS, isLocalOnly, LABELS, LOCAL_ONLY_TAG, NODE_TYPES, type NodeRecord, titleKey } from "./model";
+import { Privacy } from "./privacy";
 import { Repository } from "./repository";
 import { IndexedDBStore } from "./store";
 import { AuthError, HttpTransport, SyncClient } from "./sync";
@@ -16,7 +18,9 @@ const store = new IndexedDBStore();
 const deviceId = localStorage.getItem("deviceId") ?? `pc-${crypto.randomUUID().slice(0, 8)}`;
 localStorage.setItem("deviceId", deviceId);
 const repo = new Repository(store, deviceId);
-const sync = new SyncClient(store, new HttpTransport(), deviceId);
+const privacy = new Privacy(store);
+// Solo locali e sospetti di salute non partono: le loro modifiche restano in outbox.
+const sync = new SyncClient(store, new HttpTransport(), deviceId, (id) => privacy.isBlockedId(id));
 let selected: string | undefined;
 const ink = new InkEditor(repo, () => persist());
 
@@ -57,7 +61,7 @@ function renderList() {
     date.textContent = shortDate(n.updated_at);
     const text = document.createElement("span");
     text.className = "snippet";
-    text.textContent = snippet(n.body_md) || LABELS.type[n.type];
+    text.textContent = (privacy.isBlocked(n) ? "🔒 " : "") + (snippet(n.body_md) || LABELS.type[n.type]);
     li.append(dot, name, date, text);
     li.className = n.id === selected ? "active" : "";
     li.onclick = () => open(n.id);
@@ -119,6 +123,7 @@ function open(id: string) {
   $<HTMLTextAreaElement>("body").value = node.body_md;
   updateAreaDot();
   renderPreview(node);
+  renderHealthBanner(node);
   if (mode() === "ink") ink.show(id);
   renderList();
 }
@@ -153,8 +158,49 @@ function save(id: string) {
     body_md: $<HTMLTextAreaElement>("body").value,
   });
   renderPreview(node);
+  renderHealthBanner(node);
   renderList();
   persist();
+}
+
+// MARK: Privacy
+
+/** Avviso sopra il testo: nodo tenuto solo qui, oppure sospetto di salute in attesa di una scelta. */
+function renderHealthBanner(node: NodeRecord) {
+  const box = $("health");
+  box.replaceChildren();
+  const button = (text: string, action: () => void) => {
+    const b = document.createElement("button");
+    b.textContent = text;
+    b.onclick = () => { flushSave(); action(); persist(); open(node.id); void runSync(); };
+    return b;
+  };
+  const message = document.createElement("span");
+  if (isLocalOnly(node)) {
+    message.textContent = "Solo su questo computer: non va al server né a Gemini.";
+    box.append(message, button("Rimetti nella sincronizzazione", () => setLocalOnly(node.id, false)));
+  } else if (privacy.isHeld(node)) {
+    message.textContent = "Sembra un dato di salute: resta su questo computer, non va al server né a Gemini, finché non scegli.";
+    box.append(message, button("Non è un dato di salute", () => privacy.dismiss(node)), button("Tieni solo qui", () => setLocalOnly(node.id, true)));
+  } else {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+}
+
+/** Tiene un nodo solo sul PC (o lo rimette in sync). Se era già sul server lo si toglie da lì. */
+function setLocalOnly(id: string, on: boolean) {
+  const node = store.node(id);
+  if (!node) return;
+  const tags = on ? [...new Set([...node.tags, LOCAL_ONLY_TAG])] : node.tags.filter((t) => t !== LOCAL_ONLY_TAG);
+  repo.updateNode(id, { tags });
+  if (on && node.version > 0) store.queueRedact(id);
+  if (!on) store.unqueueRedact(id);
+}
+
+function syncEnabled(): boolean {
+  try { return localStorage.getItem("syncEnabled") !== "0"; } catch { return true; }
 }
 
 /** Modifiche rifiutate dal server: si scartano (vale il server) o si riprovano. */
@@ -199,6 +245,10 @@ function editing(): boolean {
 
 async function runSync() {
   flushSave();
+  if (!syncEnabled()) {
+    setStatus("offline", "Sincronizzazione disattivata: gli appunti restano su questo computer");
+    return;
+  }
   try {
     const result = await sync.sync();
     if (result !== "skipped") setStatus("ok", `Sincronizzato alle ${timeFormat.format(new Date())}`);
@@ -250,7 +300,12 @@ async function ask(question: string) {
   chatAbort = controller;
   $<HTMLButtonElement>("chat-send").disabled = true;
   try {
-    const reply = await answer(question, chatHistory, corpus(store.nodes()), providers, { localOnly: settings.localOnly, signal: controller.signal });
+    const reply = await answer(question, chatHistory, corpus(store.nodes(), (n) => privacy.isBlocked(n)), providers, {
+      localOnly: settings.localOnly,
+      signal: controller.signal,
+      // Mai un invio a Gemini in silenzio: i frammenti degli appunti escono dal PC solo se l'utente conferma.
+      confirmOnline: async (reason) => confirm(`Il modello locale non risponde (${reason}).\n\nInviare a Gemini, attraverso il server, i frammenti degli appunti che servono per rispondere?`),
+    });
     if (controller.signal.aborted) return;
     chatHistory.push({ role: "user", text: question }, { role: "assistant", text: reply.text });
     const body = document.createElement("div");
@@ -349,9 +404,67 @@ function holdTab(): Promise<void> {
   });
 }
 
+// MARK: Account
+
+function setupAccount() {
+  const enabled = $<HTMLInputElement>("sync-enabled");
+  enabled.checked = syncEnabled();
+  enabled.onchange = () => {
+    try { localStorage.setItem("syncEnabled", enabled.checked ? "1" : "0"); } catch { /* resta per questa sessione */ }
+    void runSync();
+  };
+  const report = (text: string) => setStatus("ok", text);
+  $("export-all").onclick = async () => {
+    try {
+      const file = await exportEverything((input, init) => fetch(input, init));
+      const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `pitchstone-esportazione-${file.exported_at.slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      report("Esportazione completa scaricata");
+    } catch (error) {
+      setStatus("error", error instanceof AuthError ? "Sessione scaduta: ricarica la pagina" : "Esportazione non riuscita");
+    }
+  };
+  const leave = async () => {
+    await clearLocal(store);
+    location.href = "/cdn-cgi/access/logout";
+  };
+  $("clear-local").onclick = async () => {
+    if (!confirm("Cancellare dal computer tutti gli appunti, le preferenze e la copia dell'app? Sul server restano.")) return;
+    await clearLocal(store);
+    location.reload();
+  };
+  $("logout").onclick = async () => {
+    if (!confirm("Uscire? I dati locali di questo computer vengono cancellati; sul server restano.")) return;
+    await leave();
+  };
+  $("erase-server").onclick = async () => {
+    const typed = prompt(`Questo cancella TUTTO dal server: appunti, storico, disegni, allegati e backup. Non si può annullare.\n\nScrivi "${ERASE_CONFIRMATION}" per confermare.`);
+    if (typed !== ERASE_CONFIRMATION) return;
+    try {
+      const result = await eraseServer((input, init) => fetch(input, init));
+      await clearLocal(store);
+      alert(result.storage ? "Tutto cancellato dal server e da questo computer." : "Database cancellato, ma alcuni file (allegati o backup) non si sono potuti togliere: ripeti l'operazione.");
+      location.reload();
+    } catch (error) {
+      setStatus("error", error instanceof AuthError ? "Sessione scaduta: ricarica la pagina" : "Cancellazione non riuscita");
+    }
+  };
+}
+
 async function main() {
   await holdTab();
   await store.load();
+  if (!store.persistent) {
+    const warning = $("storage-warning");
+    warning.textContent = `L'archivio locale non è disponibile (${store.failure}): gli appunti restano solo finché la scheda è aperta.`;
+    warning.hidden = false;
+  }
+  void store.requestPersistence();
+  setupAccount();
   for (const t of NODE_TYPES) $("type").append(new Option(LABELS.type[t], t));
   for (const a of AREAS) $("area").append(new Option(LABELS.area[a], a));
   for (const id of ["title", "type", "area", "tags", "body"]) $(id).addEventListener("input", scheduleSave);
