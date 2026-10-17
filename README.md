@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: pwa-penna
-Commit: 911d889eb454ed71ec6956d0e37b591431c96772
+Branch: main
+Commit: 3c22f8ddeb01ff5fabcd89da47d9e8340e38f7e3
