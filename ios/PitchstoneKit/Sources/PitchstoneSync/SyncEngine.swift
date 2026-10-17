@@ -39,6 +39,11 @@ public final class SyncEngine {
     /// Nodi trattenuti sul dispositivo finché l'utente non decide (sospetto dato di
     /// salute, fase 6): le loro modifiche, archi, pagine e allegati restano in outbox.
     public var holds: @MainActor (NodeRecord) -> Bool = { _ in false }
+    /// Allegati senza nodo: il loro testo non appartiene a nessun nodo e non si può valutare per la salute.
+    /// Il Kit li manda per impostazione predefinita; l'app li tiene sul dispositivo.
+    public var syncsUnattachedAttachments = true
+    /// L'allegato ha già il testo estratto e valutato? Finché no, né i file né la riga partono.
+    public var attachmentReady: @MainActor (AttachmentRecord) -> Bool = { _ in true }
 
     /// Modifiche rifiutate dal server e ancora in outbox, in attesa di correzione.
     public var rejections: [Rejection] {
@@ -78,7 +83,8 @@ public final class SyncEngine {
         guard let attachments else { return }
         for record in store.allAttachments()
         where !record.isUploaded && record.deletedAt == nil && Privacy.isSyncable(record, in: store)
-            && !(record.nodeID.flatMap(store.node).map(holds) ?? false) {
+            && !(record.nodeID.flatMap(store.node).map(holds) ?? false)
+            && (record.nodeID != nil || syncsUnattachedAttachments) && attachmentReady(record) {
             guard store.pendingChange(.attachment, record.id)?.rejection == nil else { continue }
             do {
                 try await attachments.upload(record)

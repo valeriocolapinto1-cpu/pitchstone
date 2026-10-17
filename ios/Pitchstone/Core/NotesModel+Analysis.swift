@@ -66,7 +66,8 @@ extension NotesModel {
         analysisStore.save(record)
         dismissedSignals[id] = Set(record.dismissedSignals)
         reload()
-        flushSync()
+        // Come ogni altra modifica: dopo qualche secondo di calma, non subito. Un tap per sbaglio si può ripensare.
+        scheduleSync()
     }
 
     /// "È un dato di salute": un nodo mai sincronizzato passa all'area salute; uno già
@@ -76,7 +77,10 @@ extension NotesModel {
     func confirmHealth(_ id: UUID) -> UUID? {
         guard let node = node(id) else { return nil }
         if node.version == 0 {
-            return update(id) { $0.area = .salute } ? id : nil
+            let moved = update(id) { $0.area = .salute }
+            guard moved else { return nil }
+            onHealthConfirmed?(id)
+            return id
         }
         let copy = repository.createNode(type: node.type, title: node.title, body: node.bodyMD, area: .salute, tags: node.tags)
         // Pagine a penna e allegati mai caricati vanno con il testo: nessuno parte più.
@@ -92,6 +96,9 @@ extension NotesModel {
             errorMessage = error.localizedDescription
         }
         analysisStore.remove(id)
+        // I quiz nati dal testo di salute si cancellano, e la nota sparisce dal server con il suo storico.
+        onHealthConfirmed?(id)
+        queueRedaction(id)
         changed()
         return copy.id
     }

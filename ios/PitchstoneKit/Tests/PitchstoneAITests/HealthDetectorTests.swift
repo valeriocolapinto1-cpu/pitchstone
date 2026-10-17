@@ -49,6 +49,27 @@ import Testing
         "In questo momento sto studiando Okinawa e la sua storia.",
     ]
 
+    /// Altre lingue conosciute: stessi esempi di web/test/health.test.ts.
+    static let personalOtherLanguages = [
+        "Mon médecin m'a prescrit un traitement, j'ai de la fièvre depuis deux jours.",
+        "Mi médico me recetó un tratamiento nuevo. Tengo fiebre y dolor de cabeza desde ayer.",
+        "Mein Arzt hat mir ein Medikament verschrieben, ich habe Fieber seit gestern.",
+        "Je souffre de migraine, 2 comprimés de 500 mg ce matin.",
+        "Sufro de ansiedad y mi terapia empieza el lunes.",
+    ]
+
+    static let notHealthOtherLanguages = [
+        "Le cours de biologie explique comment les médicaments agissent sur les récepteurs de la cellule.",
+        "La enfermedad infecciosa se estudia en el curso de medicina de este semestre en la universidad.",
+        "Die Vorlesung über Medikamente und ihre Wirkung findet jeden Dienstag in der Universität statt.",
+    ]
+
+    static let unknownScripts = [
+        "Сегодня я был у врача, у меня высокая температура",
+        "今日は病院に行きました。熱があります",
+        "اليوم ذهبت إلى الطبيب",
+    ]
+
     @Test(arguments: personal)
     func flagsPersonalHealth(_ text: String) {
         let result = HealthDetector.assess(text)
@@ -63,5 +84,43 @@ import Testing
 
     @Test func emptyTextIsFine() {
         #expect(HealthDetector.assess("") == .none)
+    }
+
+    @Test(arguments: personalOtherLanguages)
+    func flagsPersonalHealthInOtherKnownLanguages(_ text: String) {
+        let result = HealthDetector.assess(text)
+        #expect(result.suspected, "\(result.score) \(result.signals.sorted())")
+        #expect(!result.signals.contains(HealthDetector.unverifiedSignal))
+    }
+
+    @Test(arguments: notHealthOtherLanguages)
+    func ignoresStudyNotesInOtherKnownLanguages(_ text: String) {
+        let result = HealthDetector.assess(text)
+        #expect(!result.suspected, "\(result.score) \(result.signals.sorted())")
+    }
+
+    @Test(arguments: unknownScripts)
+    func unknownScriptsFailClosed(_ text: String) {
+        let result = HealthDetector.assess(text)
+        #expect(result.suspected)
+        #expect(result.signals.contains(HealthDetector.unverifiedSignal))
+        #expect(HealthDetector.isUnverifiable(text))
+    }
+
+    @Test func longTextInAnUnknownLatinLanguageFailsClosed() {
+        let polish = "Dzisiaj poszedłem do lekarza i opowiedziałem mu o wszystkich objawach, które mam od kilku dni, a potem zapisałem wszystkie rzeczy, które lekarz powiedział, na kartce papieru i wróciłem do domu"
+        #expect(HealthDetector.isUnverifiable(polish))
+        #expect(HealthDetector.assess(polish).suspected)
+    }
+
+    @Test(arguments: [
+        "Nuovo nodo", "Mario Rossi", "Okinawa", "x = 2y + 3",
+        "Appunti di analisi: le derivate si calcolano con il limite del rapporto incrementale.",
+        "The quick brown fox jumps over the lazy dog and runs to the forest with a friend",
+        "Lezione di russo: la parola «привет» significa ciao e si usa tra amici ogni giorno in classe",
+        "Regole di derivazione\nLinearità: (af + bg)′ = af′ + bg′. Prodotto: (fg)′ = f′g + fg′. Quoziente: (f/g)′ = (f′g − fg′)/g². Composizione: (f∘g)′ = f′(g)·g′.",
+    ])
+    func shortOrKnownTextIsVerifiable(_ text: String) {
+        #expect(!HealthDetector.isUnverifiable(text))
     }
 }

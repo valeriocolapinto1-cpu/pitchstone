@@ -128,4 +128,57 @@ struct AnalysisTests {
         #expect(!original.bodyMD.contains("emicrania"))
         #expect(!original.title.contains("Appunti") || original.bodyMD.isEmpty)
     }
+
+    @Test("confermare la salute di un nodo già sincronizzato lo mette in coda per sparire dal server e avvisa lo studio")
+    func confirmHealthQueuesRedactionAndNotifies() throws {
+        let note = model.createNode(title: "Appunti", body: "Lezione di oggi.")
+        var synced = try #require(model.store.node(note.id))
+        synced.version = 1
+        model.store.saveNode(synced)
+        model.update(note.id) { $0.bodyMD = "Mi hanno diagnosticato l'emicrania, devo prendere 5 mg di triptano." }
+        var notified: [UUID] = []
+        model.onHealthConfirmed = { notified.append($0) }
+        _ = try #require(model.confirmHealth(note.id))
+        #expect(notified == [note.id])
+        #expect(model.defaults.array(forKey: "redactQueue") as? [String] == [note.id.uuidString.lowercased()])
+    }
+
+    @Test("confermare la salute di un nodo mai sincronizzato avvisa lo studio ma non tocca il server")
+    func confirmHealthLocalNotifiesWithoutRedaction() throws {
+        let diary = model.createNode(title: "Oggi", body: "Ho la febbre, 38,5°, e mal di gola.")
+        var notified: [UUID] = []
+        model.onHealthConfirmed = { notified.append($0) }
+        #expect(model.confirmHealth(diary.id) == diary.id)
+        #expect(notified == [diary.id])
+        #expect(model.defaults.array(forKey: "redactQueue") == nil)
+    }
+
+    @Test("un testo in una lingua che il rilevatore non conosce resta trattenuto finché l'utente non sceglie")
+    func unknownLanguageIsHeld() throws {
+        let note = model.createNode(title: "Дневник", body: "Сегодня я был у врача, у меня высокая температура")
+        #expect(model.healthSuspects.contains(note.id))
+        model.dismissHealth(note.id)
+        #expect(!model.healthSuspects.contains(note.id))
+    }
+
+    @Test("una chat con una domanda di salute non finisce in un nodo che si sincronizza")
+    func suspiciousChatIsSavedAsHealth() throws {
+        let question = ChatMessage(role: .user, text: "Il mio medico dice che la pressione è 150/95 e devo prendere ramipril 5 mg: cosa significa?")
+        let answer = ChatMessage(role: .assistant, text: "Chiedi al medico.")
+        let id = try #require(model.saveChat([question, answer], focus: nil, existing: nil, sensitive: false))
+        #expect(Privacy.isSensitive(try #require(model.node(id))))
+        let plain = try #require(model.saveChat(
+            [ChatMessage(role: .user, text: "Cos'è una derivata?"), ChatMessage(role: .assistant, text: "Il limite del rapporto incrementale.")],
+            focus: nil, existing: nil, sensitive: false))
+        #expect(!Privacy.isSensitive(try #require(model.node(plain))))
+    }
+
+    @Test("la sincronizzazione si può spegnere del tutto")
+    func syncCanBeSwitchedOff() {
+        #expect(model.syncEnabled)
+        model.syncEnabled = false
+        #expect(!model.syncEnabled)
+        #expect(model.syncStatus == .notConfigured)
+        model.syncEnabled = true
+    }
 }

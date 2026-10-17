@@ -99,7 +99,8 @@ const FIRST_PERSON_WORDS = ["ho", "mi", "mio", "mia", "miei", "mie", "sto", "my"
 
 /**
  * Parole molto comuni delle lingue conosciute: se mancano quasi del tutto, la lingua è un'altra.
- * Niente parole di una lettera ("a", "e", "i", "y"): in polacco e in altre lingue significano altro.
+ * Niente parole di una lettera ("a", "e", "i", "y"): in polacco e in altre lingue significano altro. Contano solo
+ * quelle di almeno 3 lettere, come le parole del testo.
  */
 const STOPWORDS = new Set(
   unique([
@@ -117,7 +118,9 @@ const STOPWORDS = new Set(
 const LATIN_LIMIT = 0x24f;
 const MIN_NON_LATIN_LETTERS = 5;
 const NON_LATIN_SHARE = 0.3;
-const MIN_WORDS_FOR_LANGUAGE = 12;
+/** Si contano solo le parole di almeno 3 lettere: nelle formule e nel codice le variabili sono di una o due. */
+const MIN_WORD_LENGTH = 3;
+const MIN_WORDS_FOR_LANGUAGE = 15;
 const MIN_STOPWORD_SHARE = 0.1;
 
 /** True se il testo è in una scrittura o una lingua che il rilevatore non sa giudicare. */
@@ -130,7 +133,7 @@ export function isUnverifiable(text: string): boolean {
     if ((char.codePointAt(0) ?? 0) > LATIN_LIMIT) other += 1;
   }
   if (other >= MIN_NON_LATIN_LETTERS && other / letters >= NON_LATIN_SHARE) return true;
-  const words = normalize(text).split(/[^\p{L}]+/u).filter(Boolean);
+  const words = normalize(text).split(/[^\p{L}]+/u).filter((word) => word.length >= MIN_WORD_LENGTH);
   if (words.length < MIN_WORDS_FOR_LANGUAGE) return false;
   const known = words.filter((word) => STOPWORDS.has(word)).length;
   return known / words.length < MIN_STOPWORD_SHARE;

@@ -282,7 +282,26 @@ public enum PitchstoneSchema {
             SyncStateEntity.self, AttachmentEntity.self, ExtractedTextEntity.self, AnalysisStateEntity.self,
             QuizEntity.self, ReviewLogEntity.self,
         ])
-        return try ModelContainer(for: schema, configurations: [configuration])
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        if !inMemory { protectStore(at: configuration.url) }
+        return container
+    }
+
+    /// Il database contiene anche dati di salute: niente copie su iCloud o iTunes, e file protetto finché
+    /// il dispositivo non è stato sbloccato una volta (la sync in background parte a dispositivo bloccato,
+    /// quindi non si può chiedere la protezione completa).
+    static func protectStore(at url: URL) {
+        for suffix in ["", "-shm", "-wal"] {
+            var file = URL(fileURLWithPath: url.path + suffix)
+            guard FileManager.default.fileExists(atPath: file.path) else { continue }
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? file.setResourceValues(values)
+            #if os(iOS)
+            try? FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: file.path)
+            #endif
+        }
     }
 }
 #endif

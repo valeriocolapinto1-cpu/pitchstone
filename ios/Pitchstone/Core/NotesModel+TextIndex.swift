@@ -76,7 +76,11 @@ extension NotesModel {
         }
         // Ricarica (e aggiorna la revisione) solo se qualcosa è cambiato: elenco e grafo
         // vedono subito il testo nuovo.
-        if updated { reload() }
+        if updated {
+            reload()
+            // Un allegato aspettava il suo testo per partire.
+            scheduleSync()
+        }
     }
 
     /// Il primo risultato per ogni nodo, per l'elenco e la ricerca.

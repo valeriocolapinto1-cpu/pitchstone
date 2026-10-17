@@ -44,6 +44,10 @@ extension NotesModel {
     func saveChat(_ messages: [ChatMessage], focus: UUID?, existing: UUID?, sensitive: Bool) -> UUID? {
         guard messages.contains(where: { $0.role == .assistant }) else { return nil }
         let origin = focus.flatMap(node)
+        // Una domanda che sembra di salute non finisce in un nodo che si sincronizza: la conversazione diventa
+        // un dato di salute, solo locale (anche se la chat non partiva da un nodo di salute).
+        let asked = messages.filter { $0.role == .user }.map(\.text).joined(separator: "\n")
+        let sensitive = sensitive || HealthDetector.assess(asked).suspected
         let body = ChatTranscript.markdown(messages) { self.node($0)?.title }
         let title = ChatTranscript.title(for: messages)
         let id: UUID

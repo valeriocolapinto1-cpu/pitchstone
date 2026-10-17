@@ -69,6 +69,8 @@ final class NotesModel {
     @ObservationIgnored private var engine: SyncEngine?
     @ObservationIgnored private var autoSync: AutoSync?
     @ObservationIgnored let defaults: UserDefaults
+    /// Chiamata quando una nota diventa un dato di salute: i quiz nati da lei si cancellano (li registra StudyModel).
+    @ObservationIgnored var onHealthConfirmed: ((UUID) -> Void)?
 
     enum SyncStatus: Equatable {
         case notConfigured
@@ -334,7 +336,7 @@ final class NotesModel {
     static let syncDelay: Duration = .seconds(30)
     @ObservationIgnored private var pendingSync: Task<Void, Never>?
 
-    private func scheduleSync() {
+    func scheduleSync() {
         guard autoSync != nil else { return }
         pendingSync?.cancel()
         pendingSync = Task { [weak self] in
@@ -363,6 +365,59 @@ final class NotesModel {
 
     var hasCredentials: Bool { AccessKeychain.load() != nil }
 
+    /// Interruttore globale "mai nel cloud": con la sync spenta niente parte dall'iPad, nemmeno verso Gemini.
+    var syncEnabled: Bool {
+        get { defaults.object(forKey: "syncEnabled") as? Bool ?? true }
+        set {
+            defaults.set(newValue, forKey: "syncEnabled")
+            configureSync()
+        }
+    }
+
+    // MARK: Note da togliere dal server
+
+    /// Note già sincronizzate che devono sparire dal server (sono diventate dati di salute): si riprova finché ci riesce.
+    private var redactionQueue: [UUID] {
+        get { (defaults.array(forKey: "redactQueue") as? [String] ?? []).compactMap(UUID.init(uuidString:)) }
+        set { defaults.set(newValue.map { $0.uuidString.lowercased() }, forKey: "redactQueue") }
+    }
+
+    func queueRedaction(_ id: UUID) {
+        var queue = redactionQueue
+        if !queue.contains(id) {
+            queue.append(id)
+            redactionQueue = queue
+        }
+        Task { await flushRedactions() }
+    }
+
+    func flushRedactions() async {
+        guard let transport = workerTransport else { return }
+        for id in redactionQueue {
+            do {
+                try await transport.redact(id)
+            } catch {
+                return
+            }
+            redactionQueue.removeAll { $0 == id }
+        }
+    }
+
+    /// "Cancella tutto dal server": database, file degli allegati e backup. Sull'iPad non cambia niente.
+    func eraseServer() async -> Bool {
+        guard let transport = workerTransport else {
+            errorMessage = String(localized: "La sincronizzazione non è configurata.")
+            return false
+        }
+        do {
+            let result = try await transport.eraseServer()
+            return result.database && result.storage
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     /// Salva indirizzo del Worker e service token, poi riavvia la sync.
     func saveSyncSettings(workerURL: String, clientID: String, clientSecret: String) {
         self.workerURL = workerURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -384,7 +439,7 @@ final class NotesModel {
         engine = nil
         transfer = nil
         workerTransport = nil
-        guard let url = URL(string: workerURL), url.scheme == "https", let credentials = AccessKeychain.load() else {
+        guard syncEnabled, let url = URL(string: workerURL), url.scheme == "https", let credentials = AccessKeychain.load() else {
             syncStatus = .notConfigured
             return
         }
@@ -395,11 +450,18 @@ final class NotesModel {
         let engine = SyncEngine(store: store, transport: transport, deviceID: deviceID, attachments: transfer)
         // Un nodo che sembra un dato di salute aspetta la scelta dell'utente prima di partire.
         engine.holds = { [weak self] node in self?.isHeld(node) ?? false }
+        // Gli allegati senza nodo restano sull'iPad, e uno con il nodo parte solo dopo che il suo testo è stato
+        // estratto (il rilevatore di salute lo legge insieme al corpo): prima di allora non si sa cosa contiene.
+        engine.syncsUnattachedAttachments = false
+        if autoIndex {
+            engine.attachmentReady = { [weak self] record in self?.textIndex.fingerprint(of: record.id) == record.sha256 }
+        }
         self.engine = engine
         syncStatus = .idle(lastSync: nil)
         let autoSync = AutoSync(engine: engine) { [weak self] outcome in self?.finished(outcome) }
         autoSync.start()
         self.autoSync = autoSync
+        Task { await flushRedactions() }
     }
 
     func syncNow() async {
@@ -413,6 +475,7 @@ final class NotesModel {
     private func finished(_ outcome: SyncOutcome) {
         // Pagine e allegati arrivati con la sync diventano ricercabili.
         if autoIndex, case .synced(_, let pulled) = outcome, pulled > 0 { scheduleIndexing() }
+        if case .synced = outcome, !redactionQueue.isEmpty { Task { await flushRedactions() } }
         switch outcome {
         case .synced: syncStatus = .idle(lastSync: Date())
         case .failed(let message): syncStatus = .failed(message)

@@ -100,7 +100,7 @@ describe("lingue non conosciute: a chiusura", () => {
   });
 
   it("un testo lungo in una lingua latina non conosciuta è sospetto", () => {
-    const polish = "Dzisiaj poszedłem do lekarza i opowiedziałem mu o wszystkich objawach, które mam od kilku dni, a potem wróciłem do domu";
+    const polish = "Dzisiaj poszedłem do lekarza i opowiedziałem mu o wszystkich objawach, które mam od kilku dni, a potem zapisałem wszystkie rzeczy, które lekarz powiedział, na kartce papieru i wróciłem do domu";
     expect(isUnverifiable(polish)).toBe(true);
     expect(assess(polish).suspected).toBe(true);
   });
@@ -110,6 +110,10 @@ describe("lingue non conosciute: a chiusura", () => {
       expect(isUnverifiable(text)).toBe(false);
     }
     expect(isUnverifiable("The quick brown fox jumps over the lazy dog and runs to the forest with a friend")).toBe(false);
+  });
+
+  it("le formule non sono una lingua sconosciuta", () => {
+    expect(isUnverifiable("Regole di derivazione\nLinearità: (af + bg)′ = af′ + bg′. Prodotto: (fg)′ = f′g + fg′. Quoziente: (f/g)′ = (f′g − fg′)/g². Composizione: (f∘g)′ = f′(g)·g′.")).toBe(false);
   });
 
   it("un po' di cirillico dentro un testo italiano non basta", () => {

@@ -1,6 +1,8 @@
 import Foundation
 import Testing
 @testable import PitchstoneStudy
+import PitchstoneAI
+import PitchstoneSync
 
 private let calendar: Calendar = {
     var c = Calendar(identifier: .gregorian)
@@ -234,5 +236,41 @@ private func quiz(_ review: ReviewState? = nil, created: Date = day(1)) -> QuizR
         #expect(QuizGrader.parseOpenGrade(#"Ecco: {"score":1,"feedback":"Manca la definizione."}"#)?.correct == false)
         #expect(QuizGrader.parseOpenGrade(#"{"score":7}"#) == nil)
         #expect(QuizGrader.parseOpenGrade("bene") == nil)
+    }
+}
+
+@Suite struct QuizPromptGuardTests {
+    func node(_ title: String, _ body: String, area: Area = .studio, type: NodeType = .concept) -> NodeRecord {
+        NodeRecord(type: type, title: title, bodyMD: body, area: area, createdAt: day(1), updatedAt: day(1), deviceID: "t")
+    }
+
+    static let diary = "Il mio medico dice che la pressione è 150/95, devo prendere ramipril 5 mg ogni mattina."
+
+    @Test func studyNotesGetAPrompt() throws {
+        let prompt = try QuizGenerator.checkedPrompt(
+            for: node("Derivate", "La derivata misura la pendenza."), kinds: [.mcq], difficulty: 3, budget: .gemini)
+        #expect(prompt.question.contains("La derivata misura la pendenza."))
+    }
+
+    @Test func healthNodesAndSuspectedDiariesNeverGetAPrompt() {
+        let sensitive = [
+            node("Diario", "x", area: .salute), node("Diario", "x", type: .health),
+            node("Diario", Self.diary),
+            node("Дневник", "Сегодня я был у врача, у меня высокая температура"),
+        ]
+        for item in sensitive {
+            #expect(throws: ChatError.sensitiveContent) {
+                try QuizGenerator.checkedPrompt(for: item, kinds: [.mcq], difficulty: 3, budget: .gemini)
+            }
+        }
+    }
+
+    @Test func aDismissedSuspicionLetsTheNoteThrough() throws {
+        let item = node("Appunti", Self.diary)
+        let signals = HealthDetector.assess(item.title + "\n" + item.bodyMD).signals
+        _ = try QuizGenerator.checkedPrompt(for: item, kinds: [.mcq], difficulty: 3, budget: .gemini, dismissedSignals: signals)
+        #expect(throws: ChatError.sensitiveContent) {
+            try QuizGenerator.checkedPrompt(for: item, kinds: [.mcq], difficulty: 3, budget: .gemini, dismissedSignals: ["altro"])
+        }
     }
 }

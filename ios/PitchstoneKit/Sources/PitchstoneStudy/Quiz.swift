@@ -106,6 +106,18 @@ public enum QuizGenerator {
                           includesSources: false)
     }
 
+    /// Come `prompt`, ma rifiuta un nodo di salute o sospetto e non ancora giudicato innocuo dall'utente:
+    /// ultima difesa prima che il testo parta per un modello.
+    public static func checkedPrompt(
+        for node: NodeRecord, kinds: [QuizKind], difficulty: Int, budget: TokenBudget, dismissedSignals: Set<String> = []
+    ) throws -> ChatPrompt {
+        let assessment = HealthDetector.assess(node.title + "\n" + node.bodyMD)
+        guard !Privacy.isSensitive(node), !assessment.suspected || assessment.signals.isSubset(of: dismissedSignals) else {
+            throw ChatError.sensitiveContent
+        }
+        return prompt(for: node, kinds: kinds, difficulty: difficulty, budget: budget)
+    }
+
     /// Quiz validi dalla risposta del modello: le risposte multiple senza 3-6 opzioni distinte
     /// o con una risposta che non è tra le opzioni si scartano, come i calcoli non numerici.
     public static func parse(

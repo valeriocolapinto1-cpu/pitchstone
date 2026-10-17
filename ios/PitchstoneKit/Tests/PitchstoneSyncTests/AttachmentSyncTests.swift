@@ -3,6 +3,11 @@ import Testing
 @testable import PitchstoneSync
 
 @MainActor
+private final class ReadySet {
+    var ids: Set<UUID> = []
+}
+
+@MainActor
 @Suite("Allegati")
 struct AttachmentSyncTests {
     let server = FakeServer()
@@ -193,6 +198,37 @@ struct AttachmentSyncTests {
         #expect(server.attachment(good.id) != nil)
         #expect(server.attachment(broken.id) == nil)
         #expect(a.engine.rejections.map(\.id) == [broken.id])
+    }
+
+    @Test("un allegato senza nodo resta sul dispositivo se l'app lo decide, uno con il nodo parte")
+    func unattachedStaysLocalWhenConfigured() async throws {
+        let a = Device("ipad-a", server: server)
+        let node = a.repository.createNode(type: .concept, title: "Analisi", area: .studio)
+        a.engine.syncsUnattachedAttachments = false
+        let alone = try add(file(2_000), to: a, node: nil)
+        let attached = try add(file(3_000, seed: 3), to: a, node: node.id)
+        _ = await a.engine.sync()
+        #expect(server.attachment(alone.id) == nil)
+        #expect(server.attachment(attached.id) != nil)
+        #expect(server.bucket.keys.allSatisfy { !$0.hasPrefix(alone.storagePath) })
+        #expect(a.store.pendingChange(.attachment, alone.id) != nil, "resta in outbox, non si perde")
+        #expect(a.store.attachment(alone.id)?.isUploaded == false)
+    }
+
+    @Test("un allegato parte solo dopo che il suo testo è stato estratto e valutato")
+    func waitsForTextExtraction() async throws {
+        let a = Device("ipad-a", server: server)
+        let node = a.repository.createNode(type: .concept, title: "Analisi", area: .studio)
+        let attachment = try add(file(2_000), to: a, node: node.id)
+        let ready = ReadySet()
+        a.engine.attachmentReady = { ready.ids.contains($0.id) }
+        _ = await a.engine.sync()
+        #expect(server.attachment(attachment.id) == nil)
+        #expect(server.bucket.isEmpty, "né i file né la riga")
+        ready.ids = [attachment.id]
+        _ = await a.engine.sync()
+        #expect(server.attachment(attachment.id) != nil)
+        #expect(server.bucket.count == 1)
     }
 
     @Test("un file vuoto non si allega")
