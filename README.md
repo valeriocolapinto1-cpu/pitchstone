@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-4-sync
-Commit: 647a917e85d36e8b0a0cc91b91fc665593f8a429
+Branch: fase-5-prestazioni
+Commit: 3672cba99edc6193fdc9eac1924050fab7f92a7d
