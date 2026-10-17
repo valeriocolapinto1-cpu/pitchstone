@@ -82,8 +82,11 @@ public struct GraphLayout: Sendable {
 
             // Repulsione tra tutti i nodi (Barnes–Hut).
             tree.build(x: x, y: y)
+            // Una sola pila per tutti i nodi: niente allocazione a ogni chiamata.
+            var stack: [Int] = []
+            stack.reserveCapacity(64)
             for i in 0..<n {
-                let f = tree.repulsion(at: i, x: x, y: y, k2: k2, theta: config.theta)
+                let f = tree.repulsion(at: i, x: x, y: y, k2: k2, theta: config.theta, stack: &stack)
                 dx[i] += f.0
                 dy[i] += f.1
             }
@@ -231,10 +234,10 @@ struct QuadTree {
     }
 
     /// Forza repulsiva di modulo k²/d su `i` dagli altri nodi.
-    func repulsion(at i: Int, x: [Double], y: [Double], k2: Double, theta: Double) -> (Double, Double) {
+    func repulsion(at i: Int, x: [Double], y: [Double], k2: Double, theta: Double, stack: inout [Int]) -> (Double, Double) {
         var fx = 0.0, fy = 0.0
-        var stack: [Int] = [0]
-        stack.reserveCapacity(64)
+        stack.removeAll(keepingCapacity: true)
+        stack.append(0)
         let qx = x[i], qy = y[i]
         while let cell = stack.popLast() {
             var m = mass[cell]
