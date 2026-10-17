@@ -133,7 +133,8 @@ struct InkPagesView: View {
 
 /// Una pagina: tela PencilKit con salvataggio un secondo dopo l'ultimo tratto.
 /// Se la pagina cambia dall'esterno (sync, conflitto) e non ci sono tratti da
-/// salvare, la tela si ricarica.
+/// salvare, la tela si ricarica. Si salva in PSINK1 (ADR 0015), così la pagina
+/// si modifica anche dal PC; i PKDrawing salvati prima si leggono ancora.
 private struct InkPageView: View {
     @Environment(NotesModel.self) private var notes
     @Environment(\.scenePhase) private var scenePhase
@@ -150,25 +151,35 @@ private struct InkPageView: View {
     /// Ultimi byte caricati o salvati da questa vista.
     @State private var lastData: Data?
     @State private var loadError = false
+    /// Larghezza della tela, e larghezza di pagina in cui stanno le coordinate del disegno caricato.
+    @State private var canvasWidth: CGFloat = 0
+    @State private var pageWidth: CGFloat = 0
 
     var body: some View {
-        Group {
-            if let initial {
-                InkCanvas(initialDrawing: initial, background: page.background, fingerDraws: fingerDraws, history: history) { drawing in
-                    pending = drawing
-                    edits += 1
+        // PSINK1 si scala sulla larghezza della tela: serve conoscerla prima di caricare.
+        GeometryReader { proxy in
+            Group {
+                if let initial {
+                    InkCanvas(initialDrawing: initial, background: page.background, fingerDraws: fingerDraws, history: history) { drawing in
+                        pending = drawing
+                        edits += 1
+                    }
+                    .id(canvasToken)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .id(canvasToken)
-            } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .onAppear {
+                canvasWidth = proxy.size.width
+                // Una nuova comparsa (per esempio un cambio di layout) non deve perdere i tratti in sospeso.
+                if initial == nil { reload(canvasWidth: proxy.size.width) }
+            }
+            .onChange(of: proxy.size.width) { _, width in
+                canvasWidth = width
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .onAppear {
-            // Una nuova comparsa (per esempio un cambio di layout) non deve perdere i tratti in sospeso.
-            if initial == nil { reload() }
-        }
         .task(id: edits) {
             guard edits > 0 else { return }
             do {
@@ -182,7 +193,7 @@ private struct InkPageView: View {
             // Byte diversi da quelli che questa vista conosce: sync o conflitto.
             // Si ricarica solo se non ci sono tratti da salvare.
             guard pending == nil, data != lastData else { return }
-            reload()
+            reload(canvasWidth: canvasWidth)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { save() }
@@ -195,11 +206,14 @@ private struct InkPageView: View {
         }
     }
 
-    private func reload() {
+    private func reload(canvasWidth: CGFloat) {
         do {
-            initial = try InkCodec.drawing(from: page.inkData)
+            let loaded = try InkPortable.load(page.inkData, canvasWidth: canvasWidth)
+            initial = loaded.drawing
+            pageWidth = loaded.pageWidth
         } catch {
             initial = PKDrawing()
+            pageWidth = canvasWidth
             loadError = true
         }
         lastData = page.inkData
@@ -209,7 +223,7 @@ private struct InkPageView: View {
     private func save() {
         guard let drawing = pending, let loaded = lastData else { return }
         pending = nil
-        let data = InkCodec.data(from: drawing)
+        let data = InkPortable.data(from: drawing, pageWidth: pageWidth)
         guard data != loaded else { return }
         // Il repository confronta con i byte da cui è partita la tela: se una sync li ha
         // cambiati nel frattempo, i tratti vanno in una nuova pagina invece di sovrascriverli.

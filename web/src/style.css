@@ -22,6 +22,8 @@
   --lavoro: #30b0c7;
   --persone: #af52de;
   --interessi: #34c759;
+  --paper: #ffffff;
+  --paper-line: #c6c6c8;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
   font-family: var(--font);
@@ -50,6 +52,8 @@
     --lavoro: #40c8e0;
     --persone: #bf5af2;
     --interessi: #30d158;
+    --paper: #1c1c1e;
+    --paper-line: #3d3d41;
   }
 }
 
@@ -307,6 +311,9 @@ main {
 .panes[data-mode="write"] #preview { display: none; }
 .panes[data-mode="preview"] { grid-template-columns: 1fr; }
 .panes[data-mode="preview"] #body { display: none; }
+.panes[data-mode="ink"] { grid-template-columns: 1fr; }
+.panes[data-mode="ink"] #body, .panes[data-mode="ink"] #preview { display: none; }
+.panes:not([data-mode="ink"]) #ink { display: none; }
 
 #body {
   border: none;
@@ -357,6 +364,76 @@ main {
   cursor: pointer;
 }
 .wiki:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+
+/* MARK: Penna */
+
+#ink { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-top: 1px solid var(--line); margin-top: 12px; }
+#ink [hidden] { display: none !important; }
+.ink-tabs, .ink-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.ink-tabs .spacer, .ink-tools .spacer { flex: 1; }
+.ink-tab {
+  border: none;
+  background: transparent;
+  border-radius: 7px;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ink-tab[aria-selected="true"] { background: var(--selected); color: var(--accent); font-weight: 600; }
+.ink-tabs button.ghost { font-size: 13px; padding: 4px 10px; }
+.ink-tools select { font-size: 13px; padding: 4px 8px; }
+.ink-tools > button { font-size: 16px; padding: 3px 10px; }
+.ink-colors { display: inline-flex; gap: 6px; padding: 0 4px; }
+.ink-colors .swatch {
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--panel);
+  background: var(--swatch);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.ink-colors .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+.ink-sizes button { display: inline-grid; place-items: center; width: 34px; height: 26px; padding: 0; }
+.size-dot { width: var(--dot); height: var(--dot); border-radius: 50%; background: currentColor; }
+.ink-status { font-size: 12px; color: var(--muted); }
+.ink-status.error { color: var(--danger); }
+.ink-notice {
+  margin: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  font-size: 14px;
+}
+.ink-scroll { flex: 1; overflow: auto; padding: 16px; background: var(--bg); }
+.ink-paper {
+  position: relative;
+  margin: 0 auto;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px #0000001f, 0 6px 24px #00000014;
+  overflow: hidden;
+}
+.ink-paper canvas { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+.ink-empty {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  color: var(--muted);
+  text-align: center;
+  padding: 32px;
+}
+.ink-empty h2 { margin: 0; color: var(--text); font-size: 18px; }
+.ink-empty p { margin: 0; max-width: 40ch; }
 
 /* MARK: Tutor */
 

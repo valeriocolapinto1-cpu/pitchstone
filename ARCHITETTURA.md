@@ -23,7 +23,7 @@ Fuori ambito nella prima versione: audio e trascrizione, condivisione, multiuten
 | Area | Requisito |
 |---|---|
 | Grafo | Pinch per zoom, trascinamento per pan, tap per aprire nodo, doppio tap per modificare, Pencil per collegare due nodi. Cluster per area, ricerca testo più semantica, zoom semantico, etichette solo a zoom alto. |
-| Appunti | Markdown con anteprima, editor visuale, scrittura a penna con PencilKit. Strumenti: penna, evidenziatore, gomma, forme, carta a quadretti o righe, lasso. |
+| Appunti | Markdown con anteprima, editor visuale, scrittura a penna con PencilKit. Strumenti: penna, evidenziatore, gomma, forme, carta a quadretti o righe, lasso. Sul PC si scrive a mano con la tavoletta grafica sulle stesse pagine (formato portabile PSINK1, ADR 0015). |
 | PDF e OCR | Annotazioni collegate al grafo. Foto di appunti e scrittura a mano con riconoscimento. PDF divisi automaticamente in parti. |
 | Import | Vault Obsidian (file .md con link), PDF e appunti manoscritti. |
 | Analisi | Subito dopo il salvataggio, l'AI estrae nodi e collegamenti. Conferma richiesta solo per dati sensibili. |

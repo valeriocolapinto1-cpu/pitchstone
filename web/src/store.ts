@@ -10,8 +10,9 @@ export interface Store {
   saveNode(node: NodeRecord): void;
   saveEdge(edge: EdgeRecord): void;
   extras(kind: "ink_page" | "attachment"): ExtraRecord[];
+  extra(kind: "ink_page" | "attachment", id: string): ExtraRecord | undefined;
   saveExtra(kind: "ink_page" | "attachment", record: ExtraRecord): void;
-  remove(entity: Entity | "ink_page" | "attachment", id: string): void;
+  remove(entity: Entity | "attachment", id: string): void;
   pending(): PendingChange[];
   pendingChange(entity: Entity, id: string): PendingChange | undefined;
   savePending(change: PendingChange): void;
@@ -48,9 +49,10 @@ export class MemoryStore implements Store {
   saveNode(node: NodeRecord) { this.data.nodes[node.id] = node; }
   saveEdge(edge: EdgeRecord) { this.data.edges[edge.id] = edge; }
   extras(kind: "ink_page" | "attachment") { return Object.values(this.data[kind]); }
+  extra(kind: "ink_page" | "attachment", id: string) { return this.data[kind][id]; }
   saveExtra(kind: "ink_page" | "attachment", record: ExtraRecord) { this.data[kind][record.id] = record; }
 
-  remove(entity: Entity | "ink_page" | "attachment", id: string) {
+  remove(entity: Entity | "attachment", id: string) {
     if (entity === "node") delete this.data.nodes[id];
     else if (entity === "edge") delete this.data.edges[id];
     else delete this.data[entity][id];

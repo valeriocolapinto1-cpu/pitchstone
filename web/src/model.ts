@@ -31,7 +31,7 @@ export interface EdgeRecord {
   deleted_at: string | null;
 }
 
-/** Pagine a penna e allegati: sul PC si vedono, non si modificano. */
+/** Pagine a penna e allegati come arrivano dal server. Gli allegati sul PC si vedono soltanto. */
 export interface ExtraRecord {
   id: string;
   node_id: string | null;
@@ -39,7 +39,28 @@ export interface ExtraRecord {
   [key: string]: unknown;
 }
 
-export type Entity = "node" | "edge";
+export const INK_BACKGROUNDS = ["blank", "lines", "grid"] as const;
+export type InkBackground = (typeof INK_BACKGROUNDS)[number];
+
+/**
+ * Pagina a penna (tabella `ink_pages`). `ink_data` è in base64 come nel JSON della sync:
+ * PSINK1 (ADR 0015) si modifica anche sul PC, un PKDrawing solo sull'iPad.
+ * Con `attachment_id` è un'annotazione su un PDF, non una pagina del nodo.
+ */
+export interface InkPageRecord extends ExtraRecord {
+  node_id: string;
+  page_no: number;
+  background: InkBackground;
+  ink_data: string;
+  attachment_id: string | null;
+  pdf_page: number | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  device_id: string;
+}
+
+export type Entity = "node" | "edge" | "ink_page";
 
 export interface PendingChange {
   entity: Entity;

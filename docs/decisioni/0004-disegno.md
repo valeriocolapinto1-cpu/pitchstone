@@ -9,7 +9,7 @@ Gli appunti a penna sono il cuore dell'uso su iPad. Il disegno di una pagina (PK
 ## Decisioni
 
 **Modello**
-- Nuova tabella `ink_pages`: pagine di disegno di un nodo (`node_id`, `page_no`, `background` tra `blank`, `lines`, `grid`, `ink_data` = `PKDrawing.dataRepresentation()`). È il "nodo di appunti" previsto dalla fase 2; `pdf_pages.ink_data` resta per le annotazioni sui PDF della fase 4.
+- Nuova tabella `ink_pages`: pagine di disegno di un nodo (`node_id`, `page_no`, `background` tra `blank`, `lines`, `grid`, `ink_data` = `PKDrawing.dataRepresentation()`; dall'ADR 0015 le pagine del nodo si salvano nel formato portabile PSINK1, leggibile anche dal PC). È il "nodo di appunti" previsto dalla fase 2; `pdf_pages.ink_data` resta per le annotazioni sui PDF della fase 4.
 - Una pagina vuota ha zero byte. Limite di 2 MB per pagina (check sul database).
 - In SwiftData i byte stanno fuori dal database (`@Attribute(.externalStorage)`).
 
