@@ -12,7 +12,8 @@ import UIKit
 struct InkPortableTests {
     static func fixture() throws -> Data {
         var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<2 { url.deleteLastPathComponent() }
+        // …/ios/PitchstoneTests/InkPortableTests.swift → radice del repository.
+        for _ in 0..<3 { url.deleteLastPathComponent() }
         return try Data(contentsOf: url.appendingPathComponent("docs/fixtures/psink1-esempio.psink"))
     }
 
@@ -48,8 +49,9 @@ struct InkPortableTests {
 
         let back = try InkPortable.load(data, canvasWidth: 820).drawing
         #expect(back.strokes.map(\.ink.inkType) == [.pen, .marker])
-        #expect(abs(back.bounds.minX - drawing.bounds.minX) < 1)
-        #expect(abs(back.bounds.maxY - drawing.bounds.maxY) < 1)
+        // I bordi includono lo spessore del tratto, arrotondato a 0,1 punti: c'è un margine.
+        #expect(abs(back.bounds.minX - drawing.bounds.minX) < 2)
+        #expect(abs(back.bounds.maxY - drawing.bounds.maxY) < 2)
         // Di nuovo in PSINK1: stessi byte (la codifica è stabile).
         #expect(InkPortable.data(from: back, pageWidth: 820) == data)
     }
