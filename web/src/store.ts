@@ -19,8 +19,17 @@ export interface Store {
   removePending(entity: Entity, id: string): void;
   cursor(): number;
   setCursor(cursor: number): void;
+  /** Segnali di salute che l'utente ha giudicato innocui per questo nodo. */
+  dismissedSignals(id: string): string[];
+  setDismissedSignals(id: string, signals: string[]): void;
+  /** Nodi che vanno tolti dal server (erano già stati sincronizzati) e non ci sono ancora riusciti. */
+  redactQueue(): string[];
+  queueRedact(id: string): void;
+  unqueueRedact(id: string): void;
   /** Scrive su disco le modifiche fatte finora. */
   flush(): Promise<void>;
+  /** Cancella tutti i dati locali (memoria e disco). */
+  wipe(): Promise<void>;
 }
 
 interface Snapshot {
@@ -30,10 +39,12 @@ interface Snapshot {
   attachment: Record<string, ExtraRecord>;
   pending: Record<string, PendingChange>;
   cursor: number;
+  dismissed: Record<string, string[]>;
+  redact: string[];
 }
 
 function empty(): Snapshot {
-  return { nodes: {}, edges: {}, ink_page: {}, attachment: {}, pending: {}, cursor: 0 };
+  return { nodes: {}, edges: {}, ink_page: {}, attachment: {}, pending: {}, cursor: 0, dismissed: {}, redact: [] };
 }
 
 export class MemoryStore implements Store {
@@ -41,6 +52,7 @@ export class MemoryStore implements Store {
 
   async load(): Promise<void> {}
   async flush(): Promise<void> {}
+  async wipe(): Promise<void> { this.data = empty(); }
 
   nodes() { return Object.values(this.data.nodes); }
   edges() { return Object.values(this.data.edges); }
@@ -64,21 +76,51 @@ export class MemoryStore implements Store {
   removePending(entity: Entity, id: string) { delete this.data.pending[`${entity}:${id}`]; }
   cursor() { return this.data.cursor; }
   setCursor(cursor: number) { this.data.cursor = cursor; }
+  dismissedSignals(id: string) { return this.data.dismissed[id] ?? []; }
+  setDismissedSignals(id: string, signals: string[]) { this.data.dismissed[id] = [...new Set(signals)].sort(); }
+  redactQueue() { return [...this.data.redact]; }
+  queueRedact(id: string) { if (!this.data.redact.includes(id)) this.data.redact.push(id); }
+  unqueueRedact(id: string) { this.data.redact = this.data.redact.filter((x) => x !== id); }
 }
 
-/** Tutto l'archivio in un solo valore IndexedDB: per un archivio personale basta e resta semplice. */
+const DB_NAME = "pitchstone";
+
+/**
+ * Tutto l'archivio in un solo valore IndexedDB: per un archivio personale basta e resta semplice.
+ * Se il browser non lo permette (navigazione privata, spazio negato, database bloccato) l'archivio
+ * resta in memoria e `persistent` è false: la pagina lo dice, invece di perdere i dati in silenzio.
+ */
 export class IndexedDBStore extends MemoryStore {
   private db?: IDBDatabase;
+  /** Falso se non si riesce ad aprire o a scrivere su disco. */
+  persistent = true;
+  /** Motivo, se `persistent` è falso. */
+  failure?: string;
 
   override async load(): Promise<void> {
-    this.db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("pitchstone", 1);
-      request.onupgradeneeded = () => request.result.createObjectStore("state");
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    const saved = await this.request<Snapshot | undefined>((s) => s.get("snapshot"));
-    this.data = { ...empty(), ...saved };
+    try {
+      this.db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore("state");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error("archivio locale non disponibile"));
+        request.onblocked = () => reject(new Error("archivio locale bloccato da un'altra scheda"));
+      });
+      const saved = await this.request<Snapshot | undefined>((s) => s.get("snapshot"));
+      this.data = { ...empty(), ...saved };
+    } catch (error) {
+      this.persistent = false;
+      this.failure = error instanceof Error ? error.message : "archivio locale non disponibile";
+    }
+  }
+
+  /** Chiede al browser di non cancellare l'archivio quando lo spazio scarseggia. */
+  async requestPersistence(): Promise<boolean> {
+    try {
+      return (await navigator.storage?.persist?.()) ?? false;
+    } catch {
+      return false;
+    }
   }
 
   /** Risolve solo a transazione conclusa: il successo della richiesta non vuol dire che sia su disco. */
@@ -91,6 +133,23 @@ export class IndexedDBStore extends MemoryStore {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error ?? new Error("salvataggio interrotto"));
+    });
+  }
+
+  /** Cancella l'archivio dalla memoria e dal disco. */
+  override async wipe(): Promise<void> {
+    this.data = empty();
+    this.db?.close();
+    this.db = undefined;
+    await new Promise<void>((resolve) => {
+      try {
+        const request = indexedDB.deleteDatabase(DB_NAME);
+        request.onsuccess = () => resolve();
+        request.onerror = () => resolve();
+        request.onblocked = () => resolve();
+      } catch {
+        resolve();
+      }
     });
   }
 

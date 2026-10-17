@@ -1,8 +1,10 @@
 import { authenticate, isAllowed, normalizeTeamDomain, parseList, type AccessIdentity } from "./access";
 import { backupExists, checkDatabaseSize, dailyBackup, DB_WARNING_BYTES, ping } from "./backup";
 import { chat, DEFAULT_MODEL, validateChat } from "./chat";
-import { emptyStorageTrash, removeOrphans, signUrl, validateSign } from "./storage";
-import { BadRequest, MAX_BODY_BYTES, PayloadTooLarge, rpc, validatePull, validatePush, validateRedact } from "./sync";
+import { emptyBucket, emptyStorageTrash, removeOrphans, signUrl, validateSign } from "./storage";
+import {
+  BadRequest, MAX_BODY_BYTES, PayloadTooLarge, rpc, validateErase, validateExport, validatePull, validatePush, validateRedact,
+} from "./sync";
 
 /** Il secondo cron rifà solo il backup, se quello delle 04:30 non è riuscito. */
 const RECOVERY_CRON = "30 10 * * *";
@@ -88,7 +90,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return Response.json({ status: "ok" });
   }
 
-  if (!["/sync/push", "/sync/pull", "/sync/redact", "/storage/sign", "/ai/chat"].includes(pathname)) {
+  if (!["/sync/push", "/sync/pull", "/sync/redact", "/storage/sign", "/ai/chat", "/account/export", "/account/erase"].includes(pathname)) {
     return new Response("Not Found", { status: 404 });
   }
   if (request.method !== "POST") {
@@ -133,6 +135,15 @@ async function handle(request: Request, env: Env): Promise<Response> {
       const { action, path } = validateSign(body);
       return await signUrl(supabase, action, path);
     }
+    if (pathname === "/account/export") {
+      // Esportazione completa a pagine: il client le raccoglie in un solo file.
+      const { table, after } = validateExport(body);
+      return await rpc(supabase, "export_rows", { p_table: table, p_after: after, p_limit: 500, p_max_bytes: 3_000_000 }, fetch, { retries: 1 });
+    }
+    if (pathname === "/account/erase") {
+      validateErase(body);
+      return await eraseAccount(supabase);
+    }
     if (pathname === "/sync/redact") {
       // Una nota diventata di salute si toglie dal server con storico, archi, pagine e allegati.
       return await rpc(supabase, "redact_node_history", { p_id: validateRedact(body) });
@@ -149,6 +160,17 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (error instanceof BadRequest) return Response.json({ error: error.message }, { status: 400 });
     throw error;
   }
+}
+
+/** Cancella tutto dal server: database, poi file degli allegati e backup. */
+async function eraseAccount(supabase: { url: string; secretKey: string }): Promise<Response> {
+  const erased = await rpc(supabase, "account_erase", { p_confirm: "cancella-tutto" });
+  if (!erased.ok) return erased;
+  const result = (await erased.json()) as { nodes: number; epoch: number };
+  // Il database è già vuoto: se i file non si riescono a togliere lo si dice, non si finge.
+  const attachments = await emptyBucket(supabase, "attachments");
+  const backups = await emptyBucket(supabase, "backups");
+  return Response.json({ database: true, ...result, storage: attachments !== undefined && backups !== undefined });
 }
 
 /** Ogni risposta: mai in cache, tipo dichiarato. Un errore imprevisto diventa JSON con un id per i log. */

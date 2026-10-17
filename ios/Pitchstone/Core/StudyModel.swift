@@ -38,6 +38,17 @@ final class StudyModel {
             targetQuizzes: defaults.object(forKey: "goalQuizzes") as? Int ?? 100,
             targetMinutes: defaults.object(forKey: "goalMinutes") as? Int ?? 120)
         reload()
+        // Un nodo confermato come dato di salute porta via i quiz nati dal suo testo.
+        notes.onHealthConfirmed = { [weak self] id in self?.deleteQuizzes(of: id) }
+    }
+
+    /// Cancella i quiz di un nodo (e i loro ripassi): il testo da cui nascono non deve restare in giro.
+    func deleteQuizzes(of nodeID: UUID) {
+        let ids = Set(quizzes.filter { $0.nodeID == nodeID }.map(\.id))
+        guard !ids.isEmpty else { return }
+        store.delete(ids)
+        dequeue(nodeID)
+        reload()
     }
 
     func reload() {
@@ -170,7 +181,10 @@ final class StudyModel {
     }
 
     private func ask(_ provider: ChatProvider, node: NodeRecord, subject: String, level: Int, kinds: [QuizKind]) async throws -> [QuizRecord] {
-        let prompt = QuizGenerator.prompt(for: node, kinds: kinds, difficulty: level, budget: provider.budget)
+        // Ultima difesa: un nodo di salute, o sospetto e non ancora giudicato innocuo, non entra in un prompt.
+        let prompt = try QuizGenerator.checkedPrompt(
+            for: node, kinds: kinds, difficulty: level, budget: provider.budget,
+            dismissedSignals: notes.dismissedSignals[node.id] ?? [])
         let answer = try await provider.reply(to: prompt)
         let quizzes = QuizGenerator.parse(
             answer, nodeID: node.id, subject: subject, difficulty: level, allowed: Set(kinds), now: now())
@@ -216,7 +230,10 @@ final class StudyModel {
     /// l'utente si valuta da solo guardando la risposta modello.
     func gradeOpen(_ quiz: QuizRecord, answer: String) async -> QuizGrade? {
         let providers = notes.quizProviders
-        for provider in [providers.online, providers.local].compactMap({ $0 }) {
+        // La risposta la scrive l'utente e può parlare di sé: se sembra di salute resta sul dispositivo.
+        let personal = HealthDetector.assess(answer + "\n" + quiz.question).suspected
+        let candidates = personal ? [providers.local] : [providers.online, providers.local]
+        for provider in candidates.compactMap({ $0 }) {
             guard await provider.isAvailable(),
                   let reply = try? await provider.reply(to: QuizGrader.openGradingPrompt(quiz, answer: answer)),
                   let grade = QuizGrader.parseOpenGrade(reply) else { continue }

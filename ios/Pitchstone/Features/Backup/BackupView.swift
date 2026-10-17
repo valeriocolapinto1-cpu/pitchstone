@@ -17,17 +17,25 @@ struct BackupView: View {
     @State private var restoring = false
     @State private var restorePassword = ""
     @State private var message: String?
+    @State private var confirmingHealthExport = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     Toggle("Includi i dati di salute", isOn: $includeHealth)
-                    Button("Esporta in una cartella Markdown") { exportingMarkdown = true }
+                    Button("Esporta in una cartella Markdown") {
+                        // I file Markdown non sono cifrati: i dati di salute escono dalla protezione dell'app.
+                        if includeHealth { confirmingHealthExport = true } else { exportingMarkdown = true }
+                    }
                 } header: {
                     Text("Esportazione")
                 } footer: {
-                    Text("Un file .md per nodo con tipo, area e tag nel frontmatter: si apre con Obsidian. Il PDF di un singolo nodo si esporta dal nodo.")
+                    if includeHealth {
+                        Text("Attenzione: i file Markdown non sono cifrati. Con i dati di salute dentro, chi apre la cartella (o il servizio dove la salvi) li legge. Per i dati di salute usa il backup cifrato qui sotto.")
+                    } else {
+                        Text("Un file .md per nodo con tipo, area e tag nel frontmatter: si apre con Obsidian. Il PDF di un singolo nodo si esporta dal nodo.")
+                    }
                 }
                 Section {
                     SecureField("Password (almeno 8 caratteri)", text: $password)
@@ -63,6 +71,14 @@ struct BackupView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Fine") { dismiss() }
                 }
+            }
+            .confirmationDialog(
+                "Esportare anche i dati di salute in chiaro?", isPresented: $confirmingHealthExport, titleVisibility: .visible
+            ) {
+                Button("Esporta con i dati di salute", role: .destructive) { exportingMarkdown = true }
+                Button("Annulla", role: .cancel) {}
+            } message: {
+                Text("I file Markdown non sono cifrati. Il backup cifrato è la via giusta per i dati di salute.")
             }
             .fileExporter(
                 isPresented: $exportingMarkdown,

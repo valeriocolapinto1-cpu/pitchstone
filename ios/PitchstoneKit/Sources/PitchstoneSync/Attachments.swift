@@ -48,12 +48,26 @@ public struct DirectoryAttachmentFiles: AttachmentFileStore {
     public init(directory: URL) {
         self.directory = directory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        #if canImport(Darwin)
+        // Gli allegati possono contenere referti: niente copie su iCloud o iTunes (si riscaricano dal server).
+        var excluded = directory
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? excluded.setResourceValues(values)
+        #endif
     }
 
     public func url(for id: UUID) -> URL { directory.appendingPathComponent(id.uuidString.lowercased()) }
     public func exists(_ id: UUID) -> Bool { FileManager.default.fileExists(atPath: url(for: id).path) }
     public func read(_ id: UUID) throws -> Data { try Data(contentsOf: url(for: id), options: .alwaysMapped) }
-    public func write(_ data: Data, for id: UUID) throws { try data.write(to: url(for: id), options: .atomic) }
+    public func write(_ data: Data, for id: UUID) throws {
+        #if os(iOS)
+        // Illeggibile a dispositivo bloccato.
+        try data.write(to: url(for: id), options: [.atomic, .completeFileProtection])
+        #else
+        try data.write(to: url(for: id), options: .atomic)
+        #endif
+    }
     public func remove(_ id: UUID) { try? FileManager.default.removeItem(at: url(for: id)) }
 }
 
@@ -130,11 +144,15 @@ extension HTTPSyncTransport: StorageTransport {
         guard let status = (response as? HTTPURLResponse)?.statusCode, status == 200 else {
             throw HTTPError(status: (response as? HTTPURLResponse)?.statusCode ?? 0)
         }
-        return try JSONDecoder().decode(SignResponse.self, from: data).url
+        let url = try JSONDecoder().decode(SignResponse.self, from: data).url
+        // Il Worker firma solo per lo storage di Supabase: un URL altrove non si segue.
+        try validateStorageURL(url)
+        return url
     }
 
     /// Verso l'URL firmato di Supabase: niente credenziali di Access.
     public func put(_ data: Data, to url: URL) async throws {
+        try validateStorageURL(url)
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         request.timeoutInterval = 600
@@ -145,6 +163,7 @@ extension HTTPSyncTransport: StorageTransport {
     }
 
     public func get(_ url: URL) async throws -> Data {
+        try validateStorageURL(url)
         var request = URLRequest(url: url)
         request.timeoutInterval = 600
         let (data, response) = try await session.data(for: request)

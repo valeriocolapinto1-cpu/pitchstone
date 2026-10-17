@@ -230,6 +230,45 @@ describe.skipIf(!url || !secretKey || !anonKey)("sync end-to-end", () => {
     expect(again?.manifest.counts).toEqual(latest?.manifest.counts);
   });
 
+  it("l'esportazione completa restituisce tutte le pagine di ogni tabella", async () => {
+    const nodeID = crypto.randomUUID();
+    await post("/sync/push", {
+      device_id: "ipad-a",
+      changes: [{ entity: "node", base_version: null, data: { id: nodeID, type: "concept", title: "Da esportare", body_md: "x", area: "studio", tags: [] } }],
+    });
+    const rows: { id: string; title?: string }[] = [];
+    let after: string | null = null;
+    for (;;) {
+      const page: { rows: { id: string; title?: string }[]; last: string | null; more: boolean } = await post("/account/export", { table: "nodes", after });
+      rows.push(...page.rows);
+      if (!page.more || !page.last) break;
+      after = page.last;
+    }
+    expect(rows.find((row) => row.id === nodeID)?.title).toBe("Da esportare");
+  });
+
+  // Distruttivo (vedi sopra): per ultimo.
+  it.skipIf(!process.env.E2E_ALLOW_WIPE)("cancella tutto dal server: database, file e backup", async () => {
+    const config = { url: url ?? "", secretKey: secretKey ?? "" };
+    expect(await dailyBackup(config, new Date("2030-02-01T04:30:00Z"), fetch, { expire: false })).toBe("saved");
+    const epochBefore = (await post("/sync/pull", { cursor: 0, limit: 1 })).epoch as number;
+    const refused = await worker.fetch(
+      new Request("https://ai-proxy.example/account/erase", {
+        method: "POST",
+        body: JSON.stringify({ confirm: "no" }),
+        headers: { "cf-access-jwt-assertion": token, "content-type": "application/json" },
+      }) as Request<unknown, IncomingRequestCfProperties>,
+      env,
+    );
+    expect(refused.status).toBe(400);
+    const result = await post("/account/erase", { confirm: "cancella-tutto" });
+    expect(result).toMatchObject({ database: true, storage: true, epoch: epochBefore + 1 });
+    const pulled = await post("/sync/pull", { cursor: 0, limit: 1000 });
+    expect(pulled.changes).toEqual([]);
+    expect(pulled.epoch).toBe(epochBefore + 1);
+    expect(await latestManifest(config, fetch)).toBeUndefined();
+  });
+
   it("la chiave pubblica non può chiamare la sync direttamente", async () => {
     const response = await realFetch(`${url}/rest/v1/rpc/sync_pull`, {
       method: "POST",

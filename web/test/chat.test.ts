@@ -135,13 +135,15 @@ function fakeFetch(options: { ollama: "up" | "down" | "missing-model" | "fails";
   return { fn: fn as unknown as FetchFn, calls };
 }
 
+const yes = async () => true;
+
 describe("scelta del modello", () => {
   const all = corpus([node("d", "Derivate", "La derivata misura la pendenza."), node("h", "Derivate cardiache", "x", { type: "health" })]);
   const providers = (fetchFn: FetchFn) => ({ local: new OllamaProvider("llama3.2", fetchFn), online: new WorkerProvider(fetchFn) });
 
   it("risponde il modello locale quando Ollama è acceso", async () => {
     const { fn, calls } = fakeFetch({ ollama: "up" });
-    const reply = await answer("Cos'è una derivata?", [], all, providers(fn), { localOnly: false });
+    const reply = await answer("Cos'è una derivata?", [], all, providers(fn), { localOnly: false, confirmOnline: yes });
     expect(reply.provider).toBe("local");
     expect(reply.providerLabel).toBe("Modello locale (llama3.2)");
     expect(reply.citations).toEqual([{ number: 1, nodeId: "d", title: "Derivate" }]);
@@ -157,7 +159,7 @@ describe("scelta del modello", () => {
   it("con Ollama spento passa a Gemini attraverso il Worker, nel formato di /ai/chat", async () => {
     const { fn, calls } = fakeFetch({ ollama: "down" });
     const history = [{ role: "user" as const, text: "Ciao" }, { role: "assistant" as const, text: "Ciao!" }];
-    const reply = await answer("Cos'è una derivata?", history, all, providers(fn), { localOnly: false });
+    const reply = await answer("Cos'è una derivata?", history, all, providers(fn), { localOnly: false, confirmOnline: yes });
     expect(reply.provider).toBe("gemini");
     expect(reply.fallbackReason).toBe("Ollama non raggiungibile");
     expect(reply.text).toBe("Online: la derivata [1].");
@@ -174,10 +176,10 @@ describe("scelta del modello", () => {
 
   it("passa a Gemini anche se manca il modello o il modello locale fallisce", async () => {
     const missing = fakeFetch({ ollama: "missing-model" });
-    expect((await answer("derivata", [], all, providers(missing.fn), { localOnly: false })).fallbackReason)
+    expect((await answer("derivata", [], all, providers(missing.fn), { localOnly: false, confirmOnline: yes })).fallbackReason)
       .toBe("modello llama3.2 non installato in Ollama");
     const fails = fakeFetch({ ollama: "fails" });
-    const reply = await answer("derivata", [], all, providers(fails.fn), { localOnly: false });
+    const reply = await answer("derivata", [], all, providers(fails.fn), { localOnly: false, confirmOnline: yes });
     expect(reply.provider).toBe("gemini");
     expect(reply.fallbackReason).toBe("Ollama ha risposto 500");
   });
@@ -188,6 +190,40 @@ describe("scelta del modello", () => {
     const fails = fakeFetch({ ollama: "fails" });
     await expect(answer("derivata", [], all, providers(fails.fn), { localOnly: true })).rejects.toThrow(/Solo locale/);
     expect([...calls, ...fails.calls].some((c) => c.url === "/ai/chat")).toBe(false);
+  });
+
+  it("senza conferma non c'è ripiego su Gemini, né in silenzio né di nascosto", async () => {
+    const { fn, calls } = fakeFetch({ ollama: "down" });
+    await expect(answer("derivata", [], all, providers(fn), { localOnly: false })).rejects.toThrow(/non confermato/);
+    const asked: string[] = [];
+    const no = async (reason: string) => { asked.push(reason); return false; };
+    await expect(answer("derivata", [], all, providers(fn), { localOnly: false, confirmOnline: no })).rejects.toThrow(/non confermato/);
+    expect(asked).toEqual(["Ollama non raggiungibile"]);
+    expect(calls.some((c) => c.url === "/ai/chat")).toBe(false);
+  });
+
+  it("una domanda che sembra di salute resta sul PC, anche con Gemini consentito", async () => {
+    const { fn, calls } = fakeFetch({ ollama: "down" });
+    const asked = vi.fn(async () => true);
+    for (const question of ["Il mio medico dice che la pressione è 150/95: cosa significa?", "Сегодня я был у врача, у меня высокая температура"]) {
+      await expect(answer(question, [], all, providers(fn), { localOnly: false, confirmOnline: asked })).rejects.toThrow(/resta sul PC/);
+    }
+    expect(asked).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.url === "/ai/chat")).toBe(false);
+    // Con Ollama acceso risponde il modello locale.
+    const up = fakeFetch({ ollama: "up" });
+    expect((await answer("Il mio medico dice che la pressione è 150/95: cosa significa?", [], all, providers(up.fn), { localOnly: false })).provider).toBe("local");
+  });
+
+  it("una domanda di salute fatta prima resta sul PC anche nelle domande dopo", async () => {
+    const { fn } = fakeFetch({ ollama: "down" });
+    const history = [{ role: "user" as const, text: "Il mio medico dice che la pressione è 150/95." }, { role: "assistant" as const, text: "Capisco." }];
+    await expect(answer("E ora?", history, all, providers(fn), { localOnly: false, confirmOnline: yes })).rejects.toThrow(/resta sul PC/);
+  });
+
+  it("i nodi bloccati non entrano nel corpus dei prompt", () => {
+    const nodes = [node("a", "Pubblico", "testo"), node("b", "Riservato", "segreto")];
+    expect(corpus(nodes, (n) => n.id === "b").map((c) => c.nodeId)).toEqual(["a"]);
   });
 
   it("un Ollama lento non blocca: la verifica scade dopo poco", async () => {
@@ -203,9 +239,9 @@ describe("scelta del modello", () => {
 
   it("riporta gli errori del Worker", async () => {
     const limit = fakeFetch({ ollama: "down", worker: Response.json({ error: "limite di Gemini raggiunto" }, { status: 429 }) });
-    await expect(answer("derivata", [], all, providers(limit.fn), { localOnly: false })).rejects.toThrow("limite di Gemini raggiunto");
+    await expect(answer("derivata", [], all, providers(limit.fn), { localOnly: false, confirmOnline: yes })).rejects.toThrow("limite di Gemini raggiunto");
     const login = fakeFetch({ ollama: "down", worker: new Response("<html>login</html>", { status: 200 }) });
-    await expect(answer("derivata", [], all, providers(login.fn), { localOnly: false })).rejects.toThrow(/sessione scaduta/);
+    await expect(answer("derivata", [], all, providers(login.fn), { localOnly: false, confirmOnline: yes })).rejects.toThrow(/sessione scaduta/);
   });
 });
 
@@ -213,10 +249,12 @@ describe("impostazioni", () => {
   it("salva modello e Solo locale, con i predefiniti", () => {
     const data = new Map<string, string>();
     const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
-    expect(loadSettings(storage)).toEqual({ model: "llama3.2", localOnly: false });
+    expect(loadSettings(storage)).toEqual({ model: "llama3.2", localOnly: true });
     saveSettings(storage, { model: " qwen2.5:7b ", localOnly: true });
     expect(loadSettings(storage)).toEqual({ model: "qwen2.5:7b", localOnly: true });
     const broken = { getItem: () => { throw new Error("bloccato"); } };
-    expect(loadSettings(broken)).toEqual({ model: "llama3.2", localOnly: false });
+    expect(loadSettings(broken)).toEqual({ model: "llama3.2", localOnly: true });
+    saveSettings(storage, { model: "llama3.2", localOnly: false });
+    expect(loadSettings(storage).localOnly).toBe(false);
   });
 });

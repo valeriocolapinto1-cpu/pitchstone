@@ -62,6 +62,13 @@ export interface InkPageRecord extends ExtraRecord {
 
 export type Entity = "node" | "edge" | "ink_page";
 
+/** Tag che tiene un appunto solo su questo computer: niente server, niente Gemini. */
+export const LOCAL_ONLY_TAG = "solo-locale";
+
+export function isLocalOnly(node: Pick<NodeRecord, "tags">): boolean {
+  return node.tags.includes(LOCAL_ONLY_TAG);
+}
+
 export interface PendingChange {
   entity: Entity;
   id: string;

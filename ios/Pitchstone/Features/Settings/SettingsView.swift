@@ -10,6 +10,9 @@ struct SettingsView: View {
     @State private var clientID = ""
     @State private var clientSecret = ""
     @State private var chatUsesGemini = true
+    @State private var syncEnabled = true
+    @State private var confirmingErase = false
+    @State private var eraseMessage: String?
     /// "Rivedi la presentazione": RootView la apre quando questo foglio è chiuso.
     var onReplayOnboarding: () -> Void = {}
 
@@ -52,6 +55,15 @@ struct SettingsView: View {
                     Text("I nodi di salute non lasciano mai questo iPad.")
                 }
                 Section {
+                    Toggle("Sincronizzazione attiva", isOn: $syncEnabled)
+                    Button("Cancella tutto dal server…", role: .destructive) { confirmingErase = true }
+                        .disabled(notes.syncStatus == .notConfigured)
+                } header: {
+                    Text("Dati nel cloud")
+                } footer: {
+                    Text("Con la sincronizzazione spenta niente parte dall'iPad, nemmeno verso Gemini. Cancellare dal server toglie appunti, storico, disegni, allegati e backup; i dati sull'iPad restano.")
+                }
+                Section {
                     Toggle("Usa Gemini quando sei online", isOn: $chatUsesGemini)
                 } header: {
                     Text("Chat")
@@ -87,6 +99,7 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Salva") {
                         notes.chatUsesGemini = chatUsesGemini
+                        if notes.syncEnabled != syncEnabled { notes.syncEnabled = syncEnabled }
                         notes.saveSyncSettings(workerURL: workerURL, clientID: clientID, clientSecret: clientSecret)
                         dismiss()
                     }
@@ -96,6 +109,26 @@ struct SettingsView: View {
             .onAppear {
                 workerURL = notes.workerURL
                 chatUsesGemini = notes.chatUsesGemini
+                syncEnabled = notes.syncEnabled
+            }
+            .confirmationDialog(
+                "Cancellare tutto dal server?", isPresented: $confirmingErase, titleVisibility: .visible
+            ) {
+                Button("Cancella tutto dal server", role: .destructive) {
+                    Task {
+                        let complete = await notes.eraseServer()
+                        eraseMessage = complete
+                            ? String(localized: "Tutto cancellato dal server.")
+                            : String(localized: "Non è stato possibile cancellare tutto: riprova.")
+                    }
+                }
+            } message: {
+                Text("Appunti, storico, disegni, allegati e backup sul server. Non si può annullare. I dati sull'iPad restano.")
+            }
+            .alert("Server", isPresented: Binding(get: { eraseMessage != nil }, set: { if !$0 { eraseMessage = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text(eraseMessage ?? "")
             }
         }
     }

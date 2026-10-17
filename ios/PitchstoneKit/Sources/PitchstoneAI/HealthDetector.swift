@@ -56,7 +56,12 @@ public enum HealthDetector {
 
         // Serve almeno un segnale medico vero: le dosi o una frase generica da sole non bastano.
         let healthSignals = signals.subtracting(contextPatterns)
-        let suspected = personal && score >= threshold && !healthSignals.isEmpty
+        var suspected = personal && score >= threshold && !healthSignals.isEmpty
+        // A chiusura: un testo che non si sa leggere non si può dichiarare innocuo.
+        if isUnverifiable(text) {
+            signals.insert(unverifiedSignal)
+            suspected = true
+        }
         return HealthAssessment(score: score, signals: signals, suspected: suspected)
     }
 
@@ -66,34 +71,53 @@ public enum HealthDetector {
 
     /// Frasi che parlano della propria salute: segnale medico e indizio personale insieme.
     static let healthPhrases = unique([
-        "mi hanno diagnosticato", "mi ha diagnosticato", "il mio medico", "la mia dottoressa", "il mio dottore",
-        "il mio psicologo", "la mia psicologa", "il mio psichiatra", "la mia psichiatra", "la mia terapia",
-        "le mie analisi", "i miei esami", "ho la febbre", "ho mal di", "mi fa male", "mi ha prescritto",
-        "mi hanno prescritto", "la mia pressione", "il mio ciclo", "mi sono ammalato", "mi sono ammalata",
-        "sono allergico", "sono allergica", "soffro di", "ho avuto un attacco di panico",
-        "my doctor", "i was diagnosed", "my therapy", "my therapist", "my medication", "i have a fever",
-        "my blood pressure", "i suffer from",
+        "mi hanno diagnosticato", "mi ha diagnosticato", "il mio medico", "la mia dottoressa",
+        "il mio dottore", "il mio psicologo", "la mia psicologa", "il mio psichiatra",
+        "la mia psichiatra", "la mia terapia", "le mie analisi", "i miei esami",
+        "ho la febbre", "ho mal di", "mi fa male", "mi ha prescritto",
+        "mi hanno prescritto", "la mia pressione", "il mio ciclo", "mi sono ammalato",
+        "mi sono ammalata", "sono allergico", "sono allergica", "soffro di",
+        "ho avuto un attacco di panico", "my doctor", "i was diagnosed", "my therapy",
+        "my therapist", "my medication", "i have a fever", "my blood pressure",
+        "i suffer from", "mon medecin", "mon docteur", "ma therapie",
+        "mon traitement", "j ai de la fievre", "je souffre de", "on m a diagnostique",
+        "ma tension arterielle", "mes analyses", "mi medico", "mi terapia",
+        "mi tratamiento", "tengo fiebre", "sufro de", "me diagnosticaron",
+        "mi presion arterial", "mein arzt", "meine therapie", "ich habe fieber",
+        "ich leide an", "mein blutdruck", "bei mir wurde diagnostiziert",
     ])
 
     /// Frasi personali senza contenuto medico: contano solo insieme a un termine medico.
     static let personalPhrases = unique([
-        "sto prendendo", "devo prendere", "prendo il", "prendo la", "ho preso", "mi sento", "sto male",
-        "stavo male", "mi ha visitato", "i am taking", "i took", "i feel",
+        "sto prendendo", "devo prendere", "prendo il", "prendo la",
+        "ho preso", "mi sento", "sto male", "stavo male",
+        "mi ha visitato", "i am taking", "i took", "i feel",
+        "je prends", "je me sens", "tomo el", "tomo la",
+        "me siento", "ich nehme", "ich fuhle mich",
     ])
 
     /// Termini medici. Il confronto è sull'inizio della parola: "farmac" prende farmaco e farmaci.
     static let terms = unique([
-        "diagnos", "terapi", "farmac", "medicin", "ricetta medica", "posologia", "compress", "antibiotic",
-        "antidepressiv", "ansiolitic", "referto", "esami del sangue", "analisi del sangue", "glicemia",
-        "colesterolo", "pressione arteriosa", "ipertension", "diabete", "tiroide", "emicrania", "febbre",
-        "sintom", "allerg", "intolleranz", "psicolog", "psichiatr", "ansia", "attacchi di panico", "depress",
-        "insonnia", "ciclo mestruale", "gravidanz", "visita medica", "cardiolog", "dermatolog", "ginecolog",
-        "pronto soccorso", "ricovero", "ospedale", "intervento chirurgic", "fisioterapi", "medico di base",
-        "vaccin", "dolore", "infiammazion", "mal di testa", "mal di gola", "nausea",
-        "tachipirina", "paracetamolo", "ibuprofene", "aspirina", "brufen", "xanax", "lexotan",
+        "diagnos", "terapi", "farmac", "medicin", "ricetta medica",
+        "posologia", "compress", "antibiotic", "antidepressiv", "ansiolitic",
+        "referto", "esami del sangue", "analisi del sangue", "glicemia", "colesterolo",
+        "pressione arteriosa", "ipertension", "diabete", "tiroide", "emicrania",
+        "febbre", "sintom", "allerg", "intolleranz", "psicolog",
+        "psichiatr", "ansia", "attacchi di panico", "depress", "insonnia",
+        "ciclo mestruale", "gravidanz", "visita medica", "cardiolog", "dermatolog",
+        "ginecolog", "pronto soccorso", "ricovero", "ospedale", "intervento chirurgic",
+        "fisioterapi", "medico di base", "vaccin", "dolore", "infiammazion",
+        "mal di testa", "mal di gola", "nausea", "tachipirina", "paracetamolo",
+        "ibuprofene", "aspirina", "brufen", "xanax", "lexotan",
         "sertralina", "cortison", "antistaminic", "insulina", "ventolin",
-        "therap", "medication", "prescription", "symptom", "blood test", "anxiety", "migraine", "hospital",
-        "surgery", "doctor", "fever", "headache",
+        "therap", "medication", "prescription", "symptom", "blood test",
+        "anxiety", "migraine", "hospital", "surgery", "doctor",
+        "fever", "headache", "medicament", "ordonnance", "diagnostiqu",
+        "douleur", "fievre", "anxiete", "depression", "maladie",
+        "medecin", "receta medica", "sintoma", "fiebre", "ansiedad",
+        "embarazo", "enfermedad", "tratamiento", "arzt", "medikament",
+        "diagnose", "fieber", "schmerz", "angst", "schwanger",
+        "krankheit", "rezept",
     ])
 
     private static func unique(_ items: [String]) -> [String] {
@@ -116,6 +140,60 @@ public enum HealthDetector {
     ]
 
     /// Due di queste parole fanno un testo in prima persona. "sono" e "i" no:
-    /// in italiano sono anche terza persona plurale e articolo.
-    static let firstPersonWords = ["ho", "mi", "mio", "mia", "miei", "mie", "sto", "my", "me"]
+    /// in italiano sono anche terza persona plurale e articolo; "ma" neppure, è una congiunzione.
+    static let firstPersonWords = ["ho", "mi", "mio", "mia", "miei", "mie", "sto", "my", "me", "je", "mon", "mes", "tengo", "mis", "ich", "mein", "meine"]
+
+    // MARK: Lingua
+
+    /// Segnale dei testi in una lingua che il rilevatore non conosce: a chiusura, sono sospetti.
+    public static let unverifiedSignal = "lingua non verificabile"
+
+    /// Parole molto comuni delle lingue conosciute (italiano, inglese, francese, spagnolo, tedesco):
+    /// se mancano quasi del tutto, la lingua è un'altra. Niente parole di una lettera: in polacco e
+    /// in altre lingue significano altro. Stesso elenco di web/src/health.ts.
+    static let stopwords: Set<String> = Set(unique([
+        "il", "lo", "la", "gli", "le", "un", "una", "uno",
+        "di", "da", "in", "con", "su", "per", "tra", "fra",
+        "che", "non", "sono", "ho", "mi", "si", "come", "piu",
+        "ma", "anche", "del", "della", "dei", "delle", "nel", "nella",
+        "al", "alla", "questo", "questa", "the", "and", "of", "to",
+        "is", "that", "it", "for", "with", "as", "was", "on",
+        "are", "be", "this", "have", "not", "you", "my", "les",
+        "des", "du", "et", "est", "pour", "dans", "pas", "qui",
+        "sur", "avec", "je", "il", "elle", "nous", "vous", "mon",
+        "mes", "el", "los", "las", "es", "en", "por", "para",
+        "se", "su", "yo", "tengo", "mis", "der", "die", "das",
+        "und", "ist", "nicht", "ein", "eine", "zu", "den", "mit",
+        "von", "auf", "fur", "ich", "mein", "meine", "dem",
+    ]))
+
+    /// Lettere oltre il blocco "Latin Extended-B" (cirillico, greco, arabo, CJK…) sono scritture non conosciute.
+    static let latinLimit: UInt32 = 0x24F
+    static let minNonLatinLetters = 5
+    static let nonLatinShare = 0.3
+    /// Si contano solo le parole di almeno 3 lettere: nelle formule e nel codice le variabili sono di una o due.
+    static let minWordLength = 3
+    static let minWordsForLanguage = 15
+    static let minStopwordShare = 0.1
+
+    /// Vero se il testo è in una scrittura o in una lingua che il rilevatore non sa giudicare.
+    public static func isUnverifiable(_ text: String) -> Bool {
+        var letters = 0
+        var other = 0
+        for scalar in text.unicodeScalars {
+            switch scalar.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter:
+                letters += 1
+                if scalar.value > latinLimit { other += 1 }
+            default:
+                break
+            }
+        }
+        if other >= minNonLatinLetters, Double(other) / Double(letters) >= nonLatinShare { return true }
+        let words = TextSearch.normalize(text).split(whereSeparator: { !$0.isLetter }).map(String.init)
+            .filter { $0.count >= minWordLength }
+        guard words.count >= minWordsForLanguage else { return false }
+        let known = words.filter { stopwords.contains($0) }.count
+        return Double(known) / Double(words.count) < minStopwordShare
+    }
 }
