@@ -91,6 +91,18 @@ export function titleKey(title: string): string {
 
 /** Destinazioni dei `[[Titolo]]`, `[[Titolo|testo]]` e `[[Titolo#sezione]]`, fuori dal codice. */
 export function wikiTargets(markdown: string): string[] {
+  const cached = targetsCache.get(markdown);
+  if (cached) return cached;
+  const result = computeWikiTargets(markdown);
+  if (targetsCache.size >= 2000) targetsCache.clear();
+  targetsCache.set(markdown, result);
+  return result;
+}
+
+/** Memoria per testo: `resyncMentions` rilegge gli stessi corpi a ogni battuta. */
+const targetsCache = new Map<string, string[]>();
+
+function computeWikiTargets(markdown: string): string[] {
   const text = markdown.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
   const seen = new Set<string>();
   const result: string[] = [];
