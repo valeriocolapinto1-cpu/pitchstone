@@ -15,15 +15,43 @@ type SyncRecord = NodeRecord | EdgeRecord | InkPageRecord;
 /** Ordine del push: un arco e una pagina hanno bisogno del loro nodo sul server. */
 const PUSH_ORDER: Record<Entity, number> = { node: 0, ink_page: 1, edge: 2 };
 
+export interface PullPage {
+  changes: { entity: string; data: unknown }[];
+  cursor: number;
+  has_more: boolean;
+  /** Epoca della sincronizzazione: cambia quando il server viene ripristinato da un backup. */
+  epoch?: number;
+}
+
+/** Versione del contratto (contract/README.md), mandata in `X-Pitchstone-Api`. */
+export const API_VERSION = 1;
+
 export interface Transport {
   push(body: { device_id: string; changes: unknown[] }): Promise<{ results: PushResult[] }>;
-  pull(body: { cursor: number; limit: number }): Promise<{ changes: { entity: string; data: unknown }[]; cursor: number; has_more: boolean }>;
+  pull(body: { cursor: number; limit: number }): Promise<PullPage>;
   /** Toglie una nota dal server con storico, archi e pagine (era sincronizzata e non deve più esserlo). */
   redact?(id: string): Promise<void>;
 }
 
 /** Sessione di Cloudflare Access scaduta: serve un nuovo login, non è un problema di rete. */
 export class AuthError extends Error {}
+
+/** Risposta di errore del Worker: lo stato dice se la richiesta è sbagliata (4xx) o il server è in difficoltà (5xx). */
+export class HttpError extends Error {
+  constructor(readonly status: number) {
+    super(`HTTP ${status}`);
+  }
+}
+
+/** Il server chiede una versione più recente dell'app (426). */
+export class OutdatedError extends Error {
+  constructor() {
+    super("versione dell'app non più supportata: ricarica la pagina");
+  }
+}
+
+/** Tempo massimo di una richiesta: una rete che non risponde non deve bloccare la sync per sempre. */
+export const REQUEST_TIMEOUT_MS = 30_000;
 
 /** Il Worker sulla stessa origine: Cloudflare Access aggiunge da solo il token del login Google. */
 export class HttpTransport implements Transport {
@@ -32,22 +60,24 @@ export class HttpTransport implements Transport {
   private async post<T>(path: string, body: unknown): Promise<T> {
     const response = await fetch(`${this.base}${path}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      headers: { "content-type": "application/json", "x-pitchstone-api": String(API_VERSION) },
       credentials: "include",
       // Access manda alla pagina di login con un redirect: lo vediamo invece di seguirlo.
       redirect: "manual",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (response.type === "opaqueredirect" || response.status === 401 || response.status === 403) {
       throw new AuthError("login scaduto");
     }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (response.status === 426) throw new OutdatedError();
+    if (!response.ok) throw new HttpError(response.status);
     return (await response.json()) as T;
   }
 
   push(body: { device_id: string; changes: unknown[] }) { return this.post<{ results: PushResult[] }>("/sync/push", body); }
   pull(body: { cursor: number; limit: number }) {
-    return this.post<{ changes: { entity: string; data: unknown }[]; cursor: number; has_more: boolean }>("/sync/pull", body);
+    return this.post<PullPage>("/sync/pull", body);
   }
   async redact(id: string) { await this.post("/sync/redact", { id }); }
 }
@@ -73,16 +103,27 @@ export class SyncClient {
   async sync(): Promise<{ pushed: number; pulled: number } | "skipped"> {
     if (this.running) return "skipped";
     this.running = true;
+    let failure: unknown;
+    let result: { pushed: number; pulled: number } | undefined;
     try {
       await this.redactAll();
       const pushed = await this.pushAll();
       const pulled = await this.pullAll();
-      return { pushed, pulled };
+      result = { pushed, pulled };
+    } catch (error) {
+      failure = error;
     } finally {
       this.running = false;
-      // Anche dopo un errore: le risposte già applicate non vanno perse.
-      await this.store.flush();
     }
+    // Anche dopo un errore: le risposte già applicate non vanno perse. Ma se anche il salvataggio
+    // fallisce, l'errore che si vede è quello della sync, non quello del salvataggio.
+    try {
+      await this.store.flush();
+    } catch (error) {
+      failure ??= error;
+    }
+    if (failure !== undefined) throw failure;
+    return result as { pushed: number; pulled: number };
   }
 
   get rejections(): PendingChange[] {
@@ -126,8 +167,22 @@ export class SyncClient {
         this.store.remove("ink_page", page.id);
       }
     }
+    for (const attachment of this.store.extras("attachment")) {
+      if (attachment.node_id === id) this.removeAttachment(attachment.id);
+    }
     this.store.removePending("node", id);
     this.store.remove("node", id);
+  }
+
+  /** Allegato eliminato per sempre: la riga e le annotazioni sui suoi PDF. */
+  private removeAttachment(id: string) {
+    for (const page of this.store.extras("ink_page")) {
+      if (page.attachment_id === id) {
+        this.store.removePending("ink_page", page.id);
+        this.store.remove("ink_page", page.id);
+      }
+    }
+    this.store.remove("attachment", id);
   }
 
   /** Toglie dal server le note diventate solo locali; quelle che non ci riescono restano in coda. */
@@ -192,13 +247,29 @@ export class SyncClient {
       const batch = this.nextBatch(sent);
       if (batch.length === 0) return pushed;
       for (const item of batch) sent.add(`${item.pending.entity}:${item.pending.id}`);
-      const response = await this.transport.push({
-        device_id: this.deviceId,
-        changes: batch.map((item) => item.change),
-      });
+      const response = await this.pushBatch(batch.map((item) => item.change));
       if (response.results.length !== batch.length) throw new Error("risposta del server non valida");
       batch.forEach((item, i) => this.apply(response.results[i], item.pending));
       pushed += batch.length;
+    }
+  }
+
+  /**
+   * Un 400 (o un 413) sul lotto dice che almeno una voce è sbagliata, non quale: si riprova una per
+   * una, così le voci buone passano e quella sbagliata resta parcheggiata come rifiutata.
+   */
+  private async pushBatch(changes: unknown[]): Promise<{ results: PushResult[] }> {
+    try {
+      return await this.transport.push({ device_id: this.deviceId, changes });
+    } catch (error) {
+      if (!(error instanceof HttpError) || (error.status !== 400 && error.status !== 413)) throw error;
+      if (changes.length === 1) {
+        const message = error.status === 413 ? "too_large" : "invalid";
+        return { results: [{ status: "rejected", error: String(error.status), message }] };
+      }
+      const results: PushResult[] = [];
+      for (const change of changes) results.push(...(await this.pushBatch([change])).results);
+      return { results };
     }
   }
 
@@ -283,12 +354,24 @@ export class SyncClient {
     try {
       for (;;) {
         const page = await this.transport.pull({ cursor: this.store.cursor(), limit: 500 });
+        // Un'epoca nuova (il server è stato ripristinato da un backup): i cursori non valgono più.
+        // Si riparte da zero; la pagina arrivata con il vecchio cursore si scarta.
+        if (page.epoch !== undefined && page.epoch !== this.store.epoch()) {
+          const known = this.store.epoch() !== 0;
+          this.store.setEpoch(page.epoch);
+          if (known) {
+            this.store.setCursor(0);
+            continue;
+          }
+        }
         for (const change of page.changes) {
           this.incoming(change.entity, change.data, health);
           pulled += 1;
         }
-        this.store.setCursor(page.cursor);
-        if (!page.has_more) return pulled;
+        // Mai all'indietro: una risposta con un cursore più basso non deve far rileggere tutto.
+        this.store.setCursor(Math.max(this.store.cursor(), page.cursor));
+        // Una pagina vuota chiude il giro anche se il server dice che ce ne sono altre: niente giri infiniti.
+        if (!page.has_more || page.changes.length === 0) return pulled;
       }
     } finally {
       for (const edge of this.store.edges()) {
@@ -317,6 +400,8 @@ export class SyncClient {
           return;
         }
         if (this.store.pendingChange(entity, node.id)) return;
+        // Una versione più vecchia di quella che si ha già non la sostituisce.
+        if ((this.store.node(node.id)?.version ?? 0) > node.version) return;
         this.save(entity, node);
         return;
       }
@@ -324,6 +409,7 @@ export class SyncClient {
         const edge = data as EdgeRecord;
         if (health.has(edge.source_id) || health.has(edge.target_id)) return;
         if (this.store.pendingChange(entity, edge.id)) return;
+        if ((this.store.edge(edge.id)?.version ?? 0) > edge.version) return;
         this.save(entity, edge);
         return;
       }
@@ -331,6 +417,7 @@ export class SyncClient {
         const page = data as InkPageRecord;
         if (health.has(page.node_id)) return;
         if (this.store.pendingChange(entity, page.id)) return;
+        if (((this.store.extra("ink_page", page.id) as InkPageRecord | undefined)?.version ?? 0) > page.version) return;
         this.save(entity, page);
         return;
       }
@@ -352,7 +439,7 @@ export class SyncClient {
             this.store.remove(kind, id);
           }
         } else if (kind === "attachment") {
-          this.store.remove(kind, id);
+          this.removeAttachment(id);
         }
         return;
       }

@@ -59,7 +59,7 @@ select ok(
   'il corpo unito contiene entrambe le modifiche');
 select is(
   (select tags from public.nodes where id = '10000000-0000-4000-8000-000000000001'),
-  array['analisi', 'esame'], 'i tag vengono uniti');
+  array['esame'], 'tag a tre vie: B ha tolto "analisi" e aggiunto "esame", A non ha toccato i tag');
 select is(
   (select array_agg(version order by version) from public.node_versions where node_id = '10000000-0000-4000-8000-000000000001'),
   array[1, 2, 3, 4], 'lo storico conserva tutte le versioni');

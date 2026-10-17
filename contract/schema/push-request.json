@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "POST /sync/push: richiesta",
+  "type": "object",
+  "required": ["device_id", "changes"],
+  "properties": {
+    "device_id": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$" },
+    "changes": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "required": ["entity", "base_version", "data"],
+        "properties": {
+          "entity": { "enum": ["node", "edge", "ink_page", "attachment"] },
+          "base_version": { "type": ["integer", "null"], "minimum": 0 },
+          "data": { "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+        }
+      }
+    }
+  }
+}

@@ -766,3 +766,30 @@ describe("account: esporta e cancella", () => {
     expect(await response.json()).toMatchObject({ database: true, storage: false });
   });
 });
+
+describe("versione e configurazione", () => {
+  it("risponde con la versione dell'API e rifiuta con 426 un client troppo vecchio", async () => {
+    const ok = await post("/sync/pull", { cursor: 0 });
+    expect(ok.headers.get("x-pitchstone-api")).toBe("1");
+    expect(ok.status).toBe(200);
+    const token = await sign(validPayload());
+    const old = await call("/sync/pull", { method: "POST", body: JSON.stringify({ cursor: 0 }), token, headers: { "x-pitchstone-api": "0" } });
+    expect(old.status).toBe(426);
+    expect(old.headers.get("x-pitchstone-api")).toBe("1");
+    expect(await old.json()).toMatchObject({ min_api: 1 });
+    // Il controllo viene prima del database.
+    expect(rpcCalls()).toHaveLength(1);
+    const current = await call("/sync/pull", { method: "POST", body: JSON.stringify({ cursor: 0 }), token, headers: { "x-pitchstone-api": "1" } });
+    expect(current.status).toBe(200);
+  });
+
+  it("GET /sync/config dà i limiti, ma solo con il token", async () => {
+    expect((await call("/sync/config")).status).toBe(401);
+    const token = await sign(validPayload());
+    const response = await call("/sync/config", { token });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ api: 1, max_changes: 500, max_body_bytes: 5 * 1024 * 1024, max_pull_limit: 1000 });
+    expect((await call("/sync/config", { token, headers: { "sec-fetch-site": "cross-site" } })).status).toBe(403);
+    expect((await call("/sync/config", { method: "POST", body: "{}", token })).status).toBe(404);
+  });
+});

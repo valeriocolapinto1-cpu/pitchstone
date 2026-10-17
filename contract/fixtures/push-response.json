@@ -1,0 +1,19 @@
+{
+  "results": [
+    { "entity": "node", "id": "10000000-0000-4000-8000-000000000001", "status": "created", "record": {
+      "id": "10000000-0000-4000-8000-000000000001", "type": "concept", "title": "Derivata", "body_md": "Il limite del rapporto incrementale.",
+      "area": "studio", "tags": ["analisi", "esame"], "version": 1, "created_at": "2026-10-14T09:00:00.123456+00:00",
+      "updated_at": "2026-10-14T09:00:01.000001+00:00", "deleted_at": null, "device_id": "ipad-1a2b3c4d", "server_seq": 41 } },
+    { "entity": "node", "id": "10000000-0000-4000-8000-000000000002", "status": "merged", "record": {
+      "id": "10000000-0000-4000-8000-000000000002", "type": "idea", "title": "Integrale", "body_md": "A\n\n---\n\nB",
+      "area": "interessi", "tags": ["x"], "version": 4, "created_at": "2026-10-13T09:00:00+00:00",
+      "updated_at": "2026-10-14T10:00:02+00:00", "deleted_at": null, "device_id": "ipad-1a2b3c4d", "server_seq": 42 } },
+    { "entity": "edge", "id": "10000000-0000-4000-8000-0000000000e1", "status": "rejected", "error": "23503", "message": "missing_parent" },
+    { "entity": "ink_page", "id": "10000000-0000-4000-8000-0000000000a1", "status": "updated", "record": {
+      "id": "10000000-0000-4000-8000-0000000000a1", "node_id": "10000000-0000-4000-8000-000000000001", "page_no": 0,
+      "background": "grid", "ink_data": "QUJDRA==", "attachment_id": null, "pdf_page": null, "version": 2,
+      "created_at": "2026-10-14T09:10:00+00:00", "updated_at": "2026-10-14T09:10:03+00:00", "deleted_at": null,
+      "device_id": "ipad-1a2b3c4d", "server_seq": 43 } },
+    { "entity": "attachment", "id": "10000000-0000-4000-8000-0000000000b1", "status": "rejected", "error": "22023", "message": "invalid" }
+  ]
+}

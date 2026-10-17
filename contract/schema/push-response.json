@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "POST /sync/push: risposta",
+  "type": "object",
+  "required": ["results"],
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "entity": { "type": "string" },
+          "id": { "type": "string" },
+          "status": { "type": "string" },
+          "record": { "type": "object" },
+          "error": { "type": "string" },
+          "message": { "enum": ["invalid", "missing_parent", "too_large", "forbidden_type", "conflict"] }
+        },
+        "if": { "properties": { "status": { "const": "rejected" } } },
+        "then": { "required": ["status", "entity", "error", "message"] },
+        "else": { "required": ["status", "entity", "id", "record"] }
+      }
+    }
+  }
+}
