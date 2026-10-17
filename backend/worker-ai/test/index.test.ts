@@ -706,3 +706,63 @@ describe("cron", () => {
     expect(hits).toContain("https://hc.example/abc/fail");
   });
 });
+
+describe("account: esporta e cancella", () => {
+  it("l'esportazione è a pagine, per tabella", async () => {
+    const response = await post("/account/export", { table: "node_versions", after: "60000000-0000-4000-8000-000000000001" });
+    expect(response.status).toBe(200);
+    const [[input, init]] = rpcCalls();
+    expect(String(input)).toBe("https://db.example/rest/v1/rpc/export_rows");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      p_table: "node_versions", p_after: "60000000-0000-4000-8000-000000000001", p_limit: 500, p_max_bytes: 3000000,
+    });
+  });
+
+  it("rifiuta tabelle e cursori non validi, e richiede il token", async () => {
+    expect((await post("/account/export", { table: "chats" })).status).toBe(400);
+    expect((await post("/account/export", { table: "nodes", after: "x" })).status).toBe(400);
+    expect((await post("/account/export", {})).status).toBe(400);
+    expect((await call("/account/export", { method: "POST", body: JSON.stringify({ table: "nodes" }) })).status).toBe(401);
+    expect(rpcCalls()).toHaveLength(0);
+  });
+
+  it("cancellare tutto vuole la parola d'ordine e non tocca niente senza", async () => {
+    expect((await post("/account/erase", {})).status).toBe(400);
+    expect((await post("/account/erase", { confirm: "sì" })).status).toBe(400);
+    expect(rpcCalls()).toHaveLength(0);
+  });
+
+  it("cancella il database, poi i file dei due bucket", async () => {
+    const removed: string[] = [];
+    upstream.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/certs")) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      if (url.endsWith("/rpc/account_erase")) return Response.json({ nodes: 3, epoch: 2 });
+      if (url.includes("/object/list/")) {
+        const { prefix } = JSON.parse(String(init?.body)) as { prefix: string };
+        return Response.json(prefix === "" ? [{ name: "uno", id: "f" }, { name: "dir", id: null }] : [{ name: "due", id: "f" }]);
+      }
+      if (init?.method === "DELETE") {
+        removed.push(`${url.split("/").pop()}:${(JSON.parse(String(init.body)) as { prefixes: string[] }).prefixes.join(",")}`);
+        return Response.json([]);
+      }
+      return new Response("inatteso", { status: 599 });
+    });
+    const response = await post("/account/erase", { confirm: "cancella-tutto" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ database: true, nodes: 3, epoch: 2, storage: true });
+    expect(removed).toEqual(["attachments:uno,dir/due", "backups:uno,dir/due"]);
+  });
+
+  it("se i file non si riescono a togliere lo dichiara", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    upstream.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/certs")) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      if (url.endsWith("/rpc/account_erase")) return Response.json({ nodes: 0, epoch: 2 });
+      return new Response("no", { status: 500 });
+    });
+    const response = await post("/account/erase", { confirm: "cancella-tutto" });
+    expect(await response.json()).toMatchObject({ database: true, storage: false });
+  });
+});

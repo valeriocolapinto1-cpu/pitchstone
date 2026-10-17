@@ -75,6 +75,23 @@ export function validateRedact(body: unknown): string {
   return id.toLowerCase();
 }
 
+const EXPORT_TABLES = new Set(["nodes", "edges", "node_versions", "ink_pages", "attachments", "purged"]);
+
+/** Una pagina dell'esportazione completa: `{ table, after? }`. */
+export function validateExport(body: unknown): { table: string; after: string | null } {
+  if (typeof body !== "object" || body === null) throw new BadRequest("body non valido");
+  const { table, after = null } = body as { table?: unknown; after?: unknown };
+  if (typeof table !== "string" || !EXPORT_TABLES.has(table)) throw new BadRequest("table non valida");
+  if (after !== null && (typeof after !== "string" || !UUID.test(after))) throw new BadRequest("after non valido");
+  return { table, after: after === null ? null : after.toLowerCase() };
+}
+
+/** "Cancella tutto dal server" vuole la parola d'ordine, come lo svuotamento del ripristino. */
+export function validateErase(body: unknown): void {
+  const { confirm } = (typeof body === "object" && body !== null ? body : {}) as { confirm?: unknown };
+  if (confirm !== "cancella-tutto") throw new BadRequest("conferma mancante");
+}
+
 export function validatePull(body: unknown): { cursor: number; limit: number } {
   if (typeof body !== "object" || body === null) throw new BadRequest("body non valido");
   const { cursor, limit = 500 } = body as { cursor?: unknown; limit?: unknown };

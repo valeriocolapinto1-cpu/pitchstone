@@ -129,9 +129,15 @@ interface StorageEntry {
   created_at?: string | null;
 }
 
-async function listBucket(config: SupabaseConfig, prefix: string, limit: number, fetchImpl: typeof fetch): Promise<StorageEntry[] | undefined> {
+async function listBucket(
+  config: SupabaseConfig,
+  prefix: string,
+  limit: number,
+  fetchImpl: typeof fetch,
+  bucket: string = BUCKET,
+): Promise<StorageEntry[] | undefined> {
   try {
-    const response = await upstreamFetch(fetchImpl, new URL(`/storage/v1/object/list/${BUCKET}`, config.url), {
+    const response = await upstreamFetch(fetchImpl, new URL(`/storage/v1/object/list/${bucket}`, config.url), {
       method: "POST",
       headers: headers(config),
       body: JSON.stringify({ prefix, limit, offset: 0, sortBy: { column: "name", order: "asc" } }),
@@ -176,4 +182,36 @@ export async function removeOrphans(
     }
   }
   return removed;
+}
+
+/**
+ * Svuota un bucket (cartelle comprese, fino a 4 livelli). Per "cancella tutto dal server".
+ * Ritorna i file cancellati, o `undefined` se qualcosa non si è potuto elencare o cancellare.
+ */
+export async function emptyBucket(config: SupabaseConfig, bucket: string, fetchImpl: typeof fetch = fetch): Promise<number | undefined> {
+  const files: string[] = [];
+  const walk = async (prefix: string, depth: number): Promise<boolean> => {
+    const entries = await listBucket(config, prefix, 1000, fetchImpl, bucket);
+    if (!entries) return false;
+    for (const entry of entries) {
+      const path = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+      if (entry.id !== null) files.push(path);
+      else if (depth < 4 && !(await walk(path, depth + 1))) return false;
+    }
+    return true;
+  };
+  if (!(await walk("", 0))) return undefined;
+  for (let i = 0; i < files.length; i += 500) {
+    try {
+      const response = await upstreamFetch(fetchImpl, new URL(`/storage/v1/object/${bucket}`, config.url), {
+        method: "DELETE",
+        headers: headers(config),
+        body: JSON.stringify({ prefixes: files.slice(i, i + 500) }),
+      });
+      if (!response.ok) return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return files.length;
 }
