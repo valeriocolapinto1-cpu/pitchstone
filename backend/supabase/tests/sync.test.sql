@@ -78,10 +78,10 @@ select is((select body_md from public.nodes where id = '10000000-0000-4000-8000-
 select is((select title from public.nodes where id = '10000000-0000-4000-8000-000000000005'), 'Titolo di B', 'titolo di B');
 
 -- Cestino contro modifica concorrente: vince la modifica.
-select is(
-  public.sync_push('ipad-a', $$[{"entity":"node","base_version":4,"data":{"id":"10000000-0000-4000-8000-000000000001","type":"concept","title":"Limite","body_md":"x","area":"studio","deleted_at":"2026-10-01T00:00:00Z"}}]$$)
-    #>> '{results,0,record,deleted_at}',
-  '2026-10-01T00:00:00+00:00', 'nodo nel cestino');
+select ok(
+  (public.sync_push('ipad-a', $$[{"entity":"node","base_version":4,"data":{"id":"10000000-0000-4000-8000-000000000001","type":"concept","title":"Limite","body_md":"x","area":"studio","deleted_at":"2026-10-01T00:00:00Z"}}]$$)
+    #>> '{results,0,record,deleted_at}')::timestamptz > now() - interval '1 minute',
+  'nodo nel cestino: la data di eliminazione la decide il server, non il client');
 select is(
   public.sync_push('ipad-b', $$[{"entity":"node","base_version":4,"data":{"id":"10000000-0000-4000-8000-000000000001","type":"concept","title":"Limite","body_md":"y","area":"studio"}}]$$)
     #>> '{results,0,record,deleted_at}',
@@ -112,6 +112,7 @@ select is((select v->>'has_more' from t where k = 'page1'), 'true', 'altre pagin
 select public.sync_push('ipad-a', $$[
   {"entity":"node","base_version":1,"data":{"id":"10000000-0000-4000-8000-000000000004","type":"idea","title":"Ok","area":"interessi","deleted_at":"2020-01-01T00:00:00Z"}}
 ]$$);
+update public.nodes set deleted_at = now() - interval '31 days' where id = '10000000-0000-4000-8000-000000000004';
 update public.nodes set deleted_at = now() - interval '29 days' where id = '00000000-0000-4000-8000-000000000003';
 insert into t select 'beforePurge', to_jsonb((public.sync_pull(0, 1000))->'cursor');
 select ok(public.purge_trash() >= 1, 'eliminazione definitiva eseguita');

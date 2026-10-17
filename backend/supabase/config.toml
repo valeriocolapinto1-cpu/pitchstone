@@ -15,7 +15,9 @@ file_size_limit = "50MiB"
 [storage.buckets.attachments]
 public = false
 file_size_limit = "50MiB"
+allowed_mime_types = ["application/octet-stream"]
 
 [storage.buckets.backups]
 public = false
 file_size_limit = "50MiB"
+allowed_mime_types = ["application/json"]

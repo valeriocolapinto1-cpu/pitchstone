@@ -1,7 +1,7 @@
 // Backup giornaliero (ADR 0012): un'istantanea JSON di nodi, archi, pagine a penna e
 // metadati degli allegati nel bucket privato `backups`, tenuta per 14 giorni.
 // I file degli allegati sono già nel bucket `attachments`.
-import { type SupabaseConfig, rpc } from "./sync";
+import { type SupabaseConfig, rpc, upstreamFetch } from "./sync";
 import { headers } from "./storage";
 
 export const BACKUP_BUCKET = "backups";
@@ -51,13 +51,19 @@ export async function dailyBackup(
     return "refused";
   }
   const object = new URL(`/storage/v1/object/${BACKUP_BUCKET}/${backupName(now)}`, config.url);
-  const saved = await fetchImpl(object, {
-    method: "POST",
-    headers: { ...headers(config), "x-upsert": "true" },
-    body,
-  });
+  let saved: Response;
+  try {
+    saved = await upstreamFetch(fetchImpl, object, {
+      method: "POST",
+      headers: { ...headers(config), "x-upsert": "true" },
+      body,
+    });
+  } catch (error) {
+    console.error(`Backup: upload ${error instanceof Error ? error.name : "errore"}`);
+    return "failed";
+  }
   if (!saved.ok) {
-    console.error(`Backup: upload ${saved.status} ${await saved.text()}`);
+    console.error(`Backup: upload ${saved.status}`);
     return "failed";
   }
   if (expire) await removeExpired(config, now, fetchImpl);
@@ -65,18 +71,38 @@ export async function dailyBackup(
 }
 
 async function removeExpired(config: SupabaseConfig, now: Date, fetchImpl: typeof fetch): Promise<void> {
-  const listed = await fetchImpl(new URL(`/storage/v1/object/list/${BACKUP_BUCKET}`, config.url), {
-    method: "POST",
-    headers: headers(config),
-    body: JSON.stringify({ prefix: "", limit: 1000, sortBy: { column: "name", order: "asc" } }),
-  });
-  if (!listed.ok) return;
-  const names = ((await listed.json()) as { name: string }[]).map((item) => item.name);
-  const old = expired(names, now);
-  if (old.length === 0) return;
-  await fetchImpl(new URL(`/storage/v1/object/${BACKUP_BUCKET}`, config.url), {
-    method: "DELETE",
-    headers: headers(config),
-    body: JSON.stringify({ prefixes: old }),
-  });
+  try {
+    const listed = await upstreamFetch(fetchImpl, new URL(`/storage/v1/object/list/${BACKUP_BUCKET}`, config.url), {
+      method: "POST",
+      headers: headers(config),
+      body: JSON.stringify({ prefix: "", limit: 1000, sortBy: { column: "name", order: "asc" } }),
+    });
+    if (!listed.ok) {
+      console.error(`Backup: elenco ${listed.status}`);
+      return;
+    }
+    const names = ((await listed.json()) as { name: string }[]).map((item) => item.name);
+    const old = expired(names, now);
+    if (old.length === 0) return;
+    const removed = await upstreamFetch(fetchImpl, new URL(`/storage/v1/object/${BACKUP_BUCKET}`, config.url), {
+      method: "DELETE",
+      headers: headers(config),
+      body: JSON.stringify({ prefixes: old }),
+    });
+    if (!removed.ok) console.error(`Backup: pulizia ${removed.status}`);
+  } catch (error) {
+    console.error(`Backup: pulizia ${error instanceof Error ? error.name : "errore"}`);
+  }
+}
+
+/** Il backup di questo giorno c'è già? (Per il secondo cron di recupero.) */
+export async function backupExists(config: SupabaseConfig, now: Date = new Date(), fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const response = await upstreamFetch(fetchImpl, new URL(`/storage/v1/object/info/${BACKUP_BUCKET}/${backupName(now)}`, config.url), {
+      headers: headers(config),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

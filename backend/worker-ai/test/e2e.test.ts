@@ -135,22 +135,40 @@ describe.skipIf(!url || !secretKey || !anonKey)("sync end-to-end", () => {
     const direct = await realFetch(`${url}/storage/v1/object/public/attachments/${attachmentID}/part-000`);
     expect(direct.ok).toBe(false);
 
+    // Senza la riga dell'allegato non si scarica.
+    const early = await worker.fetch(
+      new Request("https://ai-proxy.example/storage/sign", {
+        method: "POST",
+        body: JSON.stringify({ action: "download", path: `${attachmentID}/part-000` }),
+        headers: { "cf-access-jwt-assertion": token, "content-type": "application/json" },
+      }) as Request<unknown, IncomingRequestCfProperties>,
+      env,
+    );
+    expect(early.status).toBe(404);
+
+    const hex = "ab".repeat(32);
+    const pushed = await post("/sync/push", {
+      device_id: "ipad-a",
+      changes: [{ entity: "attachment", base_version: null, data: {
+        id: attachmentID, node_id: null, kind: "pdf", storage_path: attachmentID, size_bytes: 71_000, sha256: hex,
+        file_name: "prova.pdf", part_count: 2 } }],
+    });
+    expect(pushed.results[0].status).toBe("created");
+
     for (const [i, bytes] of parts.entries()) {
       const signed = await post("/storage/sign", { action: "download", path: `${attachmentID}/part-${String(i).padStart(3, "0")}` });
       const got = new Uint8Array(await (await realFetch(signed.url)).arrayBuffer());
       expect(got).toEqual(bytes);
     }
 
-    // Riga dell'allegato, cestino scaduto, purge e pulizia del bucket.
-    const hex = "ab".repeat(32);
-    const pushed = await post("/sync/push", {
-      device_id: "ipad-a",
-      changes: [{ entity: "attachment", base_version: null, data: {
-        id: attachmentID, node_id: null, kind: "pdf", storage_path: attachmentID, size_bytes: 71_000, sha256: hex,
-        file_name: "prova.pdf", part_count: 2, deleted_at: "2000-01-01T00:00:00Z" } }],
-    });
-    expect(pushed.results[0].status).toBe("created");
+    // Cestino scaduto (la data di eliminazione la decide il server: qui si scrive a mano), purge e pulizia del bucket.
     const rpcHeaders = { apikey: secretKey ?? "", "content-type": "application/json" };
+    const aged = await realFetch(`${url}/rest/v1/attachments?id=eq.${attachmentID}`, {
+      method: "PATCH",
+      headers: rpcHeaders,
+      body: JSON.stringify({ deleted_at: "2000-01-01T00:00:00Z" }),
+    });
+    expect(aged.ok).toBe(true);
     expect((await realFetch(`${url}/rest/v1/rpc/purge_trash`, { method: "POST", headers: rpcHeaders, body: "{}" })).ok).toBe(true);
     expect(await emptyStorageTrash({ url: url ?? "", secretKey: secretKey ?? "" }, fetch, "0 seconds")).toBeGreaterThanOrEqual(1);
     const gone = await worker.fetch(

@@ -191,9 +191,44 @@ describe("sync", () => {
     });
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const response = await post("/sync/pull", { cursor: 0 });
-    expect(response.status).toBe(502);
+    expect(response.status).toBe(503);
     expect(await response.text()).not.toContain("dettaglio interno");
     spy.mockRestore();
+  });
+
+  it("distingue il rifiuto del database (502) dal guasto di Supabase (503), senza testo nei log", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    upstream.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/certs")) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      return Response.json({ code: "23514", message: "violazione con il testo della nota segreta" }, { status: 400 });
+    });
+    expect((await post("/sync/push", { device_id: "ipad", changes: [] })).status).toBe(502);
+    const logged = JSON.stringify(spy.mock.calls);
+    expect(logged).toContain("400 23514");
+    expect(logged).not.toContain("nota segreta");
+    upstream.mockImplementation(async (input) => {
+      if (String(input).endsWith("/certs")) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      throw new TypeError("fetch failed");
+    });
+    const down = await post("/sync/push", { device_id: "ipad", changes: [] });
+    expect(down.status).toBe(503);
+    expect(down.headers.get("retry-after")).toBe("30");
+    spy.mockRestore();
+  });
+
+  it("il pull ripete una volta un guasto transitorio, il push no", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let calls = 0;
+    upstream.mockImplementation(async (input) => {
+      if (String(input).endsWith("/certs")) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      return ++calls === 1 ? new Response("", { status: 503 }) : Response.json({ ok: true });
+    });
+    expect((await post("/sync/pull", { cursor: 0 })).status).toBe(200);
+    expect(calls).toBe(2);
+    calls = 0;
+    expect((await post("/sync/push", { device_id: "ipad", changes: [] })).status).toBe(503);
+    expect(calls).toBe(1);
   });
 
   it("firma le parti degli allegati solo con il token di Access", async () => {
@@ -275,7 +310,8 @@ describe("chat", () => {
     expect(String(url)).toContain("/models/gemini-2.5-flash:generateContent");
     expect(new Headers(init?.headers).get("x-goog-api-key")).toBe("x");
     const body = JSON.parse(String(init?.body));
-    expect(body.systemInstruction.parts[0].text).toBe(question.system);
+    expect(body.systemInstruction.parts[0].text).toContain(question.system);
+    expect(body.systemInstruction.parts[0].text).toContain("dati non fidati");
     expect(body.contents.map((c: { role: string }) => c.role)).toEqual(["user", "model", "user"]);
     expect(body.generationConfig.maxOutputTokens).toBe(500);
     expect(body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
@@ -345,5 +381,273 @@ describe("normalizeTeamDomain", () => {
     expect(normalizeTeamDomain("team.cloudflareaccess.com")).toBe("https://team.cloudflareaccess.com");
     expect(normalizeTeamDomain("https://team.cloudflareaccess.com/")).toBe("https://team.cloudflareaccess.com");
     expect(normalizeTeamDomain(" ")).toBe("");
+  });
+});
+
+describe("Access: robustezza", () => {
+  const config = { teamDomain: TEAM, audience: AUD };
+
+  function certs(response: () => Response | Promise<Response>) {
+    upstream.mockImplementation(async (input) => {
+      if (String(input).endsWith("/certs")) return response();
+      return Response.json({ ok: true });
+    });
+  }
+
+  it("chiavi irraggiungibili: 503, non 401 e nessuna eccezione", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    certs(() => {
+      throw new TypeError("rete");
+    });
+    const response = await post("/sync/pull", { cursor: 0 });
+    expect(response.status).toBe(503);
+    certs(() => new Response("", { status: 500 }));
+    resetCertsCache();
+    expect((await post("/sync/pull", { cursor: 0 })).status).toBe(503);
+  });
+
+  it("risposta di certs senza `keys` valide: non si usa", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    certs(() => Response.json({ keys: "no" }));
+    expect((await post("/sync/pull", { cursor: 0 })).status).toBe(503);
+    certs(() => Response.json({}));
+    resetCertsCache();
+    expect((await post("/sync/pull", { cursor: 0 })).status).toBe(503);
+  });
+
+  it("se Access non risponde si usano le ultime chiavi per un giorno, non oltre", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      expect(await verifyAccessJwt(await sign(validPayload()), config)).toBe(true);
+      upstream.mockImplementation(async () => new Response("", { status: 500 }));
+      vi.advanceTimersByTime(2 * 60 * 60 * 1000);
+      const payload = { ...validPayload(), exp: Math.floor(Date.now() / 1000) + 600 };
+      expect(await verifyAccessJwt(await sign(payload), config)).toBe(true);
+      vi.advanceTimersByTime(25 * 60 * 60 * 1000);
+      const later = { ...validPayload(), exp: Math.floor(Date.now() / 1000) + 600 };
+      expect((await import("../src/access")).authenticate).toBeTypeOf("function");
+      const result = await (await import("../src/access")).authenticate(await sign(later), config);
+      expect(result).toEqual({ ok: false, reason: "unavailable" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("un kid sconosciuto non rilancia richieste a ogni token", async () => {
+    const forged = await sign(validPayload(), keys.privateKey, "falso");
+    for (let i = 0; i < 4; i++) expect(await verifyAccessJwt(forged, config)).toBe(false);
+    // Una sola richiesta: le chiavi appena scaricate non si riscaricano per lo stesso kid.
+    expect(upstream.mock.calls.filter(([input]) => String(input).endsWith("/certs"))).toHaveLength(1);
+  });
+
+  it("controlla typ e iat, con tolleranza simmetrica sull'orologio", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(await verifyAccessJwt(await sign({ ...validPayload(), iat: now + 3600 }), config)).toBe(false);
+    expect(await verifyAccessJwt(await sign({ ...validPayload(), iat: now - 10 }), config)).toBe(true);
+    expect(await verifyAccessJwt(await sign({ ...validPayload(), exp: now - 30 }), config)).toBe(true);
+    expect(await verifyAccessJwt(await sign({ ...validPayload(), exp: now - 120 }), config)).toBe(false);
+    expect(await verifyAccessJwt(await sign({ ...validPayload(), nbf: now + 30 }), config)).toBe(true);
+    expect(await verifyAccessJwt(await sign({ ...validPayload(), nbf: now + 120 }), config)).toBe(false);
+    const head = b64url(JSON.stringify({ alg: "RS256", kid: "k1", typ: "at+jwt" }));
+    const body = b64url(JSON.stringify(validPayload()));
+    const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", keys.privateKey, new TextEncoder().encode(`${head}.${body}`));
+    expect(await verifyAccessJwt(`${head}.${body}.${b64url(signature)}`, config)).toBe(false);
+  });
+
+  it("restituisce l'identità del token", async () => {
+    const { authenticate } = await import("../src/access");
+    const result = await authenticate(await sign({ ...validPayload(), email: "io@example.com", sub: "u1" }), config);
+    expect(result).toEqual({ ok: true, identity: { email: "io@example.com", commonName: undefined, sub: "u1" } });
+  });
+});
+
+describe("autorizzazione per identità", () => {
+  async function as(claims: Record<string, unknown>, path: string, extra: Partial<Env> = {}) {
+    const request = new Request(`https://ai-proxy.example${path}`, {
+      method: "POST",
+      body: JSON.stringify(path === "/ai/chat"
+        ? { system: "s", messages: [{ role: "user", text: "q" }], maxOutputTokens: 10 }
+        : { cursor: 0 }),
+      headers: { "cf-access-jwt-assertion": await sign({ ...validPayload(), ...claims }), "content-type": "application/json" },
+    });
+    upstream.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/certs")) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      if (url.startsWith("https://generativelanguage.googleapis.com/")) {
+        return Response.json({ candidates: [{ content: { parts: [{ text: "ok" }] } }] });
+      }
+      return Response.json({ ok: true });
+    });
+    return worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, ...extra });
+  }
+
+  it("senza allowlist basta il token valido", async () => {
+    expect((await as({ email: "chiunque@example.com" }, "/sync/pull")).status).toBe(200);
+  });
+
+  it("con l'allowlist delle email entra solo chi c'è, senza badare alle maiuscole", async () => {
+    const extra = { ACCESS_ALLOWED_EMAILS: "Io@Example.com, altro@example.com" };
+    expect((await as({ email: "io@example.com" }, "/sync/pull", extra)).status).toBe(200);
+    expect((await as({ email: "estraneo@example.com" }, "/sync/pull", extra)).status).toBe(403);
+    expect((await as({ common_name: "token-qualsiasi" }, "/sync/pull", extra)).status).toBe(403);
+  });
+
+  it("i service token sono separati: uno per iPad (/sync, /storage), uno per il PC (/ai)", async () => {
+    const extra = { ACCESS_SYNC_TOKENS: "ipad.access", ACCESS_AI_TOKENS: "pc.access" };
+    expect((await as({ common_name: "ipad.access" }, "/sync/pull", extra)).status).toBe(200);
+    expect((await as({ common_name: "ipad.access" }, "/ai/chat", extra)).status).toBe(403);
+    expect((await as({ common_name: "pc.access" }, "/ai/chat", extra)).status).toBe(200);
+    expect((await as({ common_name: "pc.access" }, "/sync/pull", extra)).status).toBe(403);
+  });
+
+  it("registra l'identità nei log, senza il token", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await as({ email: "io@example.com" }, "/sync/pull");
+    expect(log).toHaveBeenCalledWith("/sync/pull io@example.com ok");
+    log.mockRestore();
+  });
+});
+
+describe("Worker: protezioni generali", () => {
+  it("ogni risposta è no-store e nosniff", async () => {
+    for (const response of [await call("/health"), await call("/altro"), await post("/sync/pull", { cursor: 0 })]) {
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    }
+  });
+
+  it("un errore imprevisto diventa JSON 500 con request_id, senza dettagli", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const broken = { ...env };
+    Object.defineProperty(broken, "SUPABASE_URL", {
+      get() {
+        throw new Error("dettaglio segreto");
+      },
+    });
+    const request = new Request("https://ai-proxy.example/sync/pull", {
+      method: "POST",
+      body: "{}",
+      headers: { "cf-access-jwt-assertion": await sign(validPayload()), "content-type": "application/json" },
+    });
+    const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, broken);
+    expect(response.status).toBe(500);
+    const json = (await response.json()) as { error: string; request_id: string };
+    expect(json.request_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(JSON.stringify(json)).not.toContain("segreto");
+    expect(JSON.stringify(spy.mock.calls)).not.toContain("segreto");
+    expect(JSON.stringify(spy.mock.calls)).toContain(json.request_id);
+    spy.mockRestore();
+  });
+
+  it("controlla Origin e lo fa prima del token", async () => {
+    const headers = { origin: "https://evil.example", "content-type": "application/json" };
+    expect((await call("/sync/pull", { method: "POST", body: "{}", headers })).status).toBe(403);
+    expect(upstream.mock.calls.filter(([input]) => String(input).endsWith("/certs"))).toHaveLength(0);
+    const same = { origin: "https://ai-proxy.example", "content-type": "application/json" };
+    expect((await call("/sync/pull", { method: "POST", body: JSON.stringify({ cursor: 0 }), headers: same, token: await sign(validPayload()) })).status).toBe(200);
+  });
+
+  it("413 per un body troppo grande, contato sui byte reali e senza Content-Length", async () => {
+    const token = await sign(validPayload());
+    const big = JSON.stringify({ device_id: "ipad", changes: [], pad: "è".repeat(3 * 1024 * 1024) });
+    const declared = await call("/sync/push", { method: "POST", body: big, token });
+    expect(declared.status).toBe(413);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const chunk = new TextEncoder().encode("x".repeat(1024 * 1024));
+        for (let i = 0; i < 6; i++) controller.enqueue(chunk);
+        controller.close();
+      },
+    });
+    const request = new Request("https://ai-proxy.example/sync/push", {
+      method: "POST",
+      body: stream,
+      duplex: "half",
+      headers: { "cf-access-jwt-assertion": token, "content-type": "application/json" },
+    } as RequestInit);
+    const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, env);
+    expect(response.status).toBe(413);
+    expect(rpcCalls()).toHaveLength(0);
+  });
+
+  it("limita le richieste alla chat per identità e passa Retry-After", async () => {
+    const question = { system: "s", messages: [{ role: "user", text: "q" }], maxOutputTokens: 10 };
+    const limit = vi.fn(async () => ({ success: false }));
+    const request = new Request("https://ai-proxy.example/ai/chat", {
+      method: "POST",
+      body: JSON.stringify(question),
+      headers: { "cf-access-jwt-assertion": await sign({ ...validPayload(), email: "io@example.com" }), "content-type": "application/json" },
+    });
+    const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, CHAT_LIMITER: { limit } });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(limit).toHaveBeenCalledWith({ key: "io@example.com" });
+
+    upstream.mockImplementation(async (input) => {
+      if (String(input).endsWith("/certs")) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      return new Response("quota", { status: 429, headers: { "retry-after": "17" } });
+    });
+    const quota = await post("/ai/chat", question);
+    expect(quota.status).toBe(429);
+    expect(quota.headers.get("retry-after")).toBe("17");
+  });
+
+  it("la chat ha un tetto sul testo totale e un timeout", async () => {
+    const big = { system: "s".repeat(100_000), messages: [{ role: "user", text: "q".repeat(20_000) }, { role: "assistant", text: "a".repeat(20_000) }, { role: "user", text: "q".repeat(20_000) }], maxOutputTokens: 10 };
+    expect((await post("/ai/chat", big)).status).toBe(400);
+    let signal: AbortSignal | undefined;
+    upstream.mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/certs")) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      signal = init?.signal ?? undefined;
+      return Response.json({ candidates: [{ content: { parts: [{ text: "ok" }] } }] });
+    });
+    await post("/ai/chat", { system: "s", messages: [{ role: "user", text: "q" }], maxOutputTokens: 10 });
+    expect(signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("validatePush", () => {
+  const push = (changes: unknown[], device_id = "ipad-1a2b") =>
+    post("/sync/push", { device_id, changes });
+  const node = { id: "a", type: "concept", area: "studio", title: "t" };
+
+  it("device_id: solo [A-Za-z0-9._-], 1-64 caratteri", async () => {
+    for (const bad of ["", "a b", "../x", "è", "a".repeat(65), "ipad/1"]) {
+      expect((await push([], bad)).status).toBe(400);
+    }
+    for (const good of ["ipad-1a2b", "pc-1.2_3", "a".repeat(64)]) expect((await push([], good)).status).toBe(200);
+  });
+
+  it("entity solo node, edge, ink_page, attachment; data deve essere un oggetto", async () => {
+    expect((await push([{ entity: "chat", data: node }])).status).toBe(400);
+    expect((await push([{ data: node }])).status).toBe(400);
+    expect((await push([{ entity: "node", data: "x" }])).status).toBe(400);
+    expect((await push([{ entity: "node", data: [node] }])).status).toBe(400);
+    expect((await push([{ entity: "node", data: null }])).status).toBe(400);
+    for (const entity of ["node", "edge", "ink_page", "attachment"]) {
+      expect((await push([{ entity, data: node }])).status).toBe(200);
+    }
+  });
+
+  it("riconosce la salute anche con maiuscole, spazi e forme Unicode equivalenti", async () => {
+    for (const data of [
+      { ...node, type: "Health" }, { ...node, type: " health " }, { ...node, area: "SALUTE" },
+      { ...node, area: "Salute\n" }, { ...node, area: "ｓａｌｕｔｅ" },
+    ]) {
+      expect((await push([{ entity: "node", data }])).status).toBe(400);
+    }
+    expect(rpcCalls()).toHaveLength(0);
+  });
+
+  it("tetti su title, tag e file_name", async () => {
+    expect((await push([{ entity: "node", data: { ...node, title: "t".repeat(501) } }])).status).toBe(400);
+    expect((await push([{ entity: "node", data: { ...node, title: 5 } }])).status).toBe(400);
+    expect((await push([{ entity: "node", data: { ...node, tags: Array(51).fill("a") } }])).status).toBe(400);
+    expect((await push([{ entity: "node", data: { ...node, tags: ["a".repeat(101)] } }])).status).toBe(400);
+    expect((await push([{ entity: "node", data: { ...node, tags: [1] } }])).status).toBe(400);
+    expect((await push([{ entity: "node", data: { ...node, tags: "x" } }])).status).toBe(400);
+    expect((await push([{ entity: "attachment", data: { ...node, file_name: "f".repeat(256) } }])).status).toBe(400);
+    expect((await push([{ entity: "node", data: { ...node, title: "t".repeat(500), tags: Array(50).fill("a".repeat(100)) } }])).status).toBe(200);
   });
 });

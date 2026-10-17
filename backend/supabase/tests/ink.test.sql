@@ -96,6 +96,7 @@ select is((select v->>'has_more' from t where k = 'bigpull'), 'true', 'la second
 
 -- Cestino: la pagina segue il nodo.
 select public.sync_push('ipad-a', $$[{"entity":"node","base_version":1,"data":{"id":"20000000-0000-4000-8000-000000000001","type":"concept","title":"Appunti","area":"studio","deleted_at":"2020-01-01T00:00:00Z"}}]$$);
+update public.nodes set deleted_at = now() - interval '31 days' where id = '20000000-0000-4000-8000-000000000001';
 insert into t select 'beforePurge', to_jsonb((public.sync_pull(0, 1000))->'cursor');
 select public.purge_trash();
 select is((select count(*)::int from public.ink_pages where node_id = '20000000-0000-4000-8000-000000000001'), 0, 'pagine eliminate con il nodo');
