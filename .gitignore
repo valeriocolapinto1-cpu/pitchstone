@@ -32,3 +32,12 @@ backend/supabase/.temp/
 .env
 .env.*
 !.env.example
+
+# Chiavi e profili di firma
+*.p8
+*.p12
+*.pem
+*.mobileprovision
+
+# Impostazioni locali di Claude Code
+.claude/
