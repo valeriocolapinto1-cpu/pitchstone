@@ -76,7 +76,9 @@ export async function restoreBackup(
   const call = async (fn: string, args: Record<string, unknown>): Promise<unknown> => {
     const response = await rpc(config, fn, args, fetchImpl);
     if (!response.ok) throw new Error(`${fn}: ${response.status}`);
-    return response.json();
+    // Le funzioni che restituiscono void rispondono senza corpo.
+    const text = await response.text();
+    return text === "" ? null : JSON.parse(text);
   };
 
   if (wipe) {
