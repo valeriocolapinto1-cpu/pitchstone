@@ -226,10 +226,7 @@ public final class SyncEngine {
             if bytes > Self.maxBatchBytes, !batch.isEmpty { break }
             batch.append(Snapshot(pending: pending, change: change))
         }
-        let order: [Entity: Int] = [.node: 0, .attachment: 1, .edge: 2, .inkPage: 3]
-        return batch.enumerated()
-            .sorted { (order[$0.element.pending.entity]!, $0.offset) < (order[$1.element.pending.entity]!, $1.offset) }
-            .map(\.element)
+        return batch
     }
 
     private func isHeld(_ pending: PendingChange) -> Bool {
