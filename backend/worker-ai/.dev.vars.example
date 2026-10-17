@@ -3,3 +3,7 @@ SUPABASE_URL=http://127.0.0.1:54321
 SUPABASE_SECRET_KEY=
 ACCESS_TEAM_DOMAIN=
 ACCESS_AUD=
+# Facoltative: allowlist di identità (separate da virgole). Vuote = basta il token valido.
+ACCESS_ALLOWED_EMAILS=
+ACCESS_SYNC_TOKENS=
+ACCESS_AI_TOKENS=

@@ -57,4 +57,5 @@ Solo nomi; i valori non vanno mai nel repository (vedi [.env.example](.env.examp
 | `GEMINI_API_KEY` | Secret del Worker Cloudflare (`wrangler secret put`) |
 | `SUPABASE_SECRET_KEY` | Secret del Worker Cloudflare (`wrangler secret put`) |
 | `SUPABASE_URL`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | `[vars]` di `backend/worker-ai/wrangler.toml` (valori pubblici); `[previews.vars]` resta vuoto, così le anteprime dei branch non raggiungono la produzione |
+| `ACCESS_ALLOWED_EMAILS`, `ACCESS_SYNC_TOKENS`, `ACCESS_AI_TOKENS` | Facoltative, `[vars]` o secret del Worker: allowlist di email (login Google) e di `common_name` dei service token (iPad per `/sync` e `/storage`, PC per `/ai`). Se vuote vale la sola policy di Access |
 | `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` | Keychain dell'iPad |

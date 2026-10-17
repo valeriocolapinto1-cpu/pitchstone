@@ -18,9 +18,22 @@ SUPABASE_URL = ""
 ACCESS_TEAM_DOMAIN = ""
 ACCESS_AUD = ""
 
-# Pulizia dei file degli allegati eliminati, dopo purge_trash (03:00 UTC).
+# Pulizia dei file degli allegati eliminati e backup, dopo purge_trash (03:00 UTC).
+# Il secondo cron rifà solo il backup, se quello delle 04:30 non è riuscito.
 [triggers]
-crons = ["30 4 * * *"]
+crons = ["30 4 * * *", "30 10 * * *"]
+
+# Log e tracce nel pannello di Cloudflare. I log del Worker non contengono testi delle note.
+[observability]
+enabled = true
+
+# Limite di richieste alla chat per identità: 20 al minuto.
+[[ratelimits]]
+name = "CHAT_LIMITER"
+namespace_id = "1001"
+  [ratelimits.simple]
+  limit = 20
+  period = 60
 
 # Secret: wrangler secret put GEMINI_API_KEY
 #         wrangler secret put SUPABASE_SECRET_KEY
