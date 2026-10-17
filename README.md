@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-5-prestazioni
-Commit: 3672cba99edc6193fdc9eac1924050fab7f92a7d
+Branch: main
+Commit: ca2a5c57c4b98e5b351a12c719ad9d172ce31c10
