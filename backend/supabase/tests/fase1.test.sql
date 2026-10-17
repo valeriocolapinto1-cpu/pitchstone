@@ -3,7 +3,7 @@ select plan(17);
 
 -- Privilegi.
 select ok(not has_table_privilege('authenticated', 'public.nodes', 'SELECT'), 'authenticated non legge nodes');
-select ok(not has_table_privilege('authenticated', 'public.quizzes', 'SELECT'), 'authenticated non legge le tabelle dello schema iniziale');
+select ok(not has_table_privilege('authenticated', 'public.edges', 'SELECT'), 'authenticated non legge anche le tabelle dello schema iniziale (edges)');
 select ok(has_table_privilege('service_role', 'public.nodes', 'SELECT'), 'service_role legge nodes');
 select ok(not (select prosecdef from pg_proc where proname = 'backup_snapshot'), 'backup_snapshot non è security definer');
 

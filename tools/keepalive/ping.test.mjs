@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { ping, pingUrl, TABLE } from "./ping.mjs";
+import { checkBackupAge, ping, pingUrl, TABLE } from "./ping.mjs";
 
 const SUPABASE_URL = "https://progetto.supabase.co";
 
@@ -34,7 +34,7 @@ test("il ping usa solo la chiave pubblica", async () => {
 test("lo script non contiene altre route REST né altre chiavi", async () => {
   const source = await readFile(new URL("./ping.mjs", import.meta.url), "utf8");
   assert.equal(TABLE, "keepalive");
-  assert.deepEqual(source.match(/\/rest\/v1\/[^`"'\s]*/g), ["/rest/v1/${TABLE}"]);
+  assert.deepEqual(source.match(/\/rest\/v1\/[^`"'\s]*/g), ["/rest/v1/${TABLE}", "/rest/v1/rpc/backup_status"]);
   assert.doesNotMatch(source, /SERVICE_ROLE|service_role/);
 });
 
@@ -71,4 +71,28 @@ test("fallisce se la risposta non è un array", async () => {
 
 test("fallisce senza variabili d'ambiente", async () => {
   await assert.rejects(ping({ supabaseUrl: "", anonKey: "" }), /obbligatori/);
+});
+
+test("l'età dell'ultimo backup si legge con la sola chiave pubblica", async () => {
+  const { calls, fetchImpl } = fakeFetch(200, { last_backup_at: "2026-10-17T04:30:00Z", age_hours: 5.5 });
+  assert.equal(await checkBackupAge({ supabaseUrl: SUPABASE_URL, anonKey: "anon", fetchImpl }), 5.5);
+  assert.equal(calls[0].url.pathname, "/rest/v1/rpc/backup_status");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].init.headers.apikey, "anon");
+});
+
+test("il keep-alive fallisce se l'ultimo backup ha più di 36 ore o non c'è", async () => {
+  await assert.rejects(
+    checkBackupAge({ supabaseUrl: SUPABASE_URL, anonKey: "anon", fetchImpl: fakeFetch(200, { age_hours: 36.1 }).fetchImpl }),
+    /36\.1 ore/,
+  );
+  await assert.rejects(
+    checkBackupAge({ supabaseUrl: SUPABASE_URL, anonKey: "anon", fetchImpl: fakeFetch(200, { last_backup_at: null, age_hours: null }).fetchImpl }),
+    /mai stato completato/,
+  );
+  await assert.rejects(
+    checkBackupAge({ supabaseUrl: SUPABASE_URL, anonKey: "anon", fetchImpl: fakeFetch(404, {}).fetchImpl }),
+    /404/,
+  );
+  assert.equal(await checkBackupAge({ supabaseUrl: SUPABASE_URL, anonKey: "anon", fetchImpl: fakeFetch(200, { age_hours: 36 }).fetchImpl }), 36);
 });

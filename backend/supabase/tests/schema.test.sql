@@ -1,13 +1,11 @@
 begin;
 select plan(13);
 
-select has_extension('extensions', 'vector', 'estensione vector installata');
+select hasnt_extension('vector', 'estensione vector non più installata');
 
 select tables_are('public', array[
-  'nodes', 'edges', 'node_versions', 'attachments', 'pdf_pages', 'chunks', 'chats',
-  'messages', 'quizzes', 'reviews', 'review_logs', 'goals', 'exams', 'sync_changes', 'keepalive', 'purged', 'ink_pages',
-  'storage_trash'
-], 'tabelle della sezione 5 più keepalive, purged, ink_pages e storage_trash');
+  'nodes', 'edges', 'node_versions', 'attachments', 'keepalive', 'purged', 'ink_pages', 'storage_trash', 'sync_meta'
+], 'solo le tabelle usate: dati sincronizzati, keepalive e code di servizio');
 
 select is(
   (select count(*)::int from pg_tables where schemaname = 'public' and not rowsecurity),

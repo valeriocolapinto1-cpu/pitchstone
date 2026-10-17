@@ -66,6 +66,15 @@ export function validatePush(body: unknown): { deviceId: string; changes: Change
   return { deviceId, changes };
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function validateRedact(body: unknown): string {
+  if (typeof body !== "object" || body === null) throw new BadRequest("body non valido");
+  const { id } = body as { id?: unknown };
+  if (typeof id !== "string" || !UUID.test(id)) throw new BadRequest("id non valido");
+  return id.toLowerCase();
+}
+
 export function validatePull(body: unknown): { cursor: number; limit: number } {
   if (typeof body !== "object" || body === null) throw new BadRequest("body non valido");
   const { cursor, limit = 500 } = body as { cursor?: unknown; limit?: unknown };

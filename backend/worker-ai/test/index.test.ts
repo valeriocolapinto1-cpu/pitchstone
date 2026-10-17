@@ -651,3 +651,58 @@ describe("validatePush", () => {
     expect((await push([{ entity: "node", data: { ...node, title: "t".repeat(500), tags: Array(50).fill("a".repeat(100)) } }])).status).toBe(200);
   });
 });
+
+describe("redact", () => {
+  it("toglie una nota dal server chiamando redact_node_history", async () => {
+    const id = "60000000-0000-4000-8000-000000000001";
+    const response = await post("/sync/redact", { id: id.toUpperCase() });
+    expect(response.status).toBe(200);
+    const [[input, init]] = rpcCalls();
+    expect(String(input)).toBe("https://db.example/rest/v1/rpc/redact_node_history");
+    expect(JSON.parse(String(init?.body))).toEqual({ p_id: id });
+  });
+
+  it("rifiuta id non validi e richiede il token", async () => {
+    expect((await post("/sync/redact", { id: "../x" })).status).toBe(400);
+    expect((await post("/sync/redact", {})).status).toBe(400);
+    expect((await call("/sync/redact", { method: "POST", body: "{}" })).status).toBe(401);
+    expect(rpcCalls()).toHaveLength(0);
+  });
+});
+
+describe("cron", () => {
+  const controller = (cron: string) => ({ cron, scheduledTime: Date.parse("2026-10-17T04:30:00Z"), noRetry() {} }) as ScheduledController;
+
+  function backendDown() {
+    const hits: string[] = [];
+    upstream.mockImplementation(async (input) => {
+      const url = String(input);
+      hits.push(url);
+      if (url.startsWith("https://hc.example")) return new Response("ok");
+      if (url.endsWith("/rpc/db_size_bytes")) return Response.json(1024);
+      return new Response("giù", { status: 500 });
+    });
+    return hits;
+  }
+
+  it("senza Supabase non fa niente", async () => {
+    await worker.scheduled?.(controller("30 4 * * *"), { ...env, SUPABASE_URL: "" });
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("avvisa con /fail se il backup non riesce", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const hits = backendDown();
+    await worker.scheduled?.(controller("30 4 * * *"), { ...env, HEALTHCHECK_URL: "https://hc.example/abc" });
+    expect(hits).toContain("https://hc.example/abc/fail");
+    expect(hits).not.toContain("https://hc.example/abc");
+  });
+
+  it("il secondo cron rifà il backup solo se manca", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const hits = backendDown();
+    await worker.scheduled?.(controller("30 10 * * *"), { ...env, HEALTHCHECK_URL: "https://hc.example/abc" });
+    expect(hits.some((url) => url.endsWith("/rpc/backup_counts"))).toBe(true);
+    expect(hits).toContain("https://hc.example/abc/fail");
+  });
+});

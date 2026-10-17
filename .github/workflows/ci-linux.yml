@@ -104,7 +104,7 @@ jobs:
         run: |
           npm ci
           eval "$(supabase status -o env --workdir ..)"
-          E2E_REQUIRED=1 E2E_SUPABASE_URL="$API_URL" E2E_SUPABASE_SECRET_KEY="$SECRET_KEY" E2E_SUPABASE_ANON_KEY="$ANON_KEY" \
+          E2E_REQUIRED=1 E2E_ALLOW_WIPE=1 E2E_SUPABASE_URL="$API_URL" E2E_SUPABASE_SECRET_KEY="$SECRET_KEY" E2E_SUPABASE_ANON_KEY="$ANON_KEY" \
             npm run test:e2e -- --reporter=verbose
       - name: Test end-to-end della sync (iPad ↔ PWA)
         working-directory: web

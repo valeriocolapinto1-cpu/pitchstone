@@ -3,7 +3,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import worker, { type Env } from "../src/index";
 import { resetCertsCache } from "../src/access";
-import { dailyBackup } from "../src/backup";
+import { dailyBackup, latestManifest } from "../src/backup";
+import { loadBackup, restoreBackup, WIPE_CONFIRMATION } from "../src/restore";
 import { emptyStorageTrash } from "../src/storage";
 
 const url = process.env.E2E_SUPABASE_URL;
@@ -182,20 +183,51 @@ describe.skipIf(!url || !secretKey || !anonKey)("sync end-to-end", () => {
     expect(gone.status).toBe(404);
   });
 
-  it("il backup giornaliero finisce nel bucket privato, senza dati di salute", async () => {
+  it("il backup giornaliero finisce nel bucket privato, completo e senza dati di salute", async () => {
     const config = { url: url ?? "", secretKey: secretKey ?? "" };
     const date = new Date("2030-01-15T04:30:00Z");
     // Senza scadenza: contro un progetto vero non cancella i backup veri.
     expect(await dailyBackup(config, date, fetch, { expire: false })).toBe("saved");
-    const saved = await realFetch(`${url}/storage/v1/object/backups/2030-01-15.json`, {
-      headers: { apikey: secretKey ?? "" },
-    });
-    expect(saved.ok).toBe(true);
-    const snapshot = (await saved.json()) as { format: string; nodes: { type: string; area: string }[] };
-    expect(snapshot.format).toBe("pitchstone-backup");
-    expect(snapshot.nodes.some((node) => node.type === "health" || node.area === "salute")).toBe(false);
-    const anonymous = await realFetch(`${url}/storage/v1/object/public/backups/2030-01-15.json`);
+    const latest = await latestManifest(config, fetch);
+    expect(latest?.manifest.run.startsWith("2030-01-15/")).toBe(true);
+    const backup = await loadBackup(config, latest?.manifest.run ?? "", fetch);
+    expect(backup.tables.nodes.some((node) => node.type === "health" || node.area === "salute")).toBe(false);
+    expect(backup.manifest.counts.nodes).toBeGreaterThan(0);
+    const anonymous = await realFetch(`${url}/storage/v1/object/public/backups/${latest?.path}`);
     expect(anonymous.ok).toBe(false);
+  });
+
+  // Distruttivo: gira solo dove si dichiara (in CI, sul database locale).
+  it.skipIf(!process.env.E2E_ALLOW_WIPE)("ripristino: si svuota il database e si riparte dal backup, con una nuova epoca", async () => {
+    const config = { url: url ?? "", secretKey: secretKey ?? "" };
+    const date = new Date("2030-01-16T04:30:00Z");
+    const pageID = crypto.randomUUID();
+    const nodeID = crypto.randomUUID();
+    await post("/sync/push", {
+      device_id: "ipad-a",
+      changes: [
+        { entity: "node", base_version: null, data: { id: nodeID, type: "concept", title: "Da ripristinare", body_md: "corpo", area: "studio", tags: [] } },
+        { entity: "ink_page", base_version: null, data: { id: pageID, node_id: nodeID, page_no: 0, background: "grid", ink_data: "QUJDRA==" } },
+      ],
+    });
+    expect(await dailyBackup(config, date, fetch, { expire: false })).toBe("saved");
+    const latest = await latestManifest(config, fetch);
+    const epochBefore = (await post("/sync/pull", { cursor: 0, limit: 1 })).epoch as number;
+
+    const epoch = await restoreBackup(config, latest?.manifest.run ?? "", { wipe: true, confirm: WIPE_CONFIRMATION }, fetch);
+    expect(epoch).toBe(epochBefore + 1);
+
+    // Un client che riparte da zero rivede tutto, con l'epoca nuova e il disegno intatto.
+    const pulled = await post("/sync/pull", { cursor: 0, limit: 1000 });
+    expect(pulled.epoch).toBe(epoch);
+    const node = pulled.changes.find((c: { entity: string; data: { id: string } }) => c.entity === "node" && c.data.id === nodeID);
+    expect(node.data.title).toBe("Da ripristinare");
+    const page = pulled.changes.find((c: { entity: string; data: { id: string } }) => c.entity === "ink_page" && c.data.id === pageID);
+    expect(page.data.ink_data).toBe("QUJDRA==");
+    // Il backup subito dopo ha gli stessi conteggi.
+    expect(await dailyBackup(config, new Date("2030-01-17T04:30:00Z"), fetch, { expire: false })).toBe("saved");
+    const again = await latestManifest(config, fetch);
+    expect(again?.manifest.counts).toEqual(latest?.manifest.counts);
   });
 
   it("la chiave pubblica non può chiamare la sync direttamente", async () => {

@@ -1,8 +1,8 @@
 import { authenticate, isAllowed, normalizeTeamDomain, parseList, type AccessIdentity } from "./access";
-import { backupExists, dailyBackup } from "./backup";
+import { backupExists, checkDatabaseSize, dailyBackup, DB_WARNING_BYTES, ping } from "./backup";
 import { chat, DEFAULT_MODEL, validateChat } from "./chat";
 import { emptyStorageTrash, removeOrphans, signUrl, validateSign } from "./storage";
-import { BadRequest, MAX_BODY_BYTES, PayloadTooLarge, rpc, validatePull, validatePush } from "./sync";
+import { BadRequest, MAX_BODY_BYTES, PayloadTooLarge, rpc, validatePull, validatePush, validateRedact } from "./sync";
 
 /** Il secondo cron rifà solo il backup, se quello delle 04:30 non è riuscito. */
 const RECOVERY_CRON = "30 10 * * *";
@@ -20,6 +20,8 @@ export interface Env {
   ACCESS_SYNC_TOKENS?: string;
   /** Service token ammessi per /ai (PC). */
   ACCESS_AI_TOKENS?: string;
+  /** Segnale di vita del backup (stile healthchecks.io): ping se riesce, `/fail` se no o se il database è quasi pieno. */
+  HEALTHCHECK_URL?: string;
   /** Limite di richieste alla chat per identità (binding Cloudflare). */
   CHAT_LIMITER?: RateLimit;
 }
@@ -86,7 +88,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return Response.json({ status: "ok" });
   }
 
-  if (!["/sync/push", "/sync/pull", "/storage/sign", "/ai/chat"].includes(pathname)) {
+  if (!["/sync/push", "/sync/pull", "/sync/redact", "/storage/sign", "/ai/chat"].includes(pathname)) {
     return new Response("Not Found", { status: 404 });
   }
   if (request.method !== "POST") {
@@ -131,6 +133,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
       const { action, path } = validateSign(body);
       return await signUrl(supabase, action, path);
     }
+    if (pathname === "/sync/redact") {
+      // Una nota diventata di salute si toglie dal server con storico, archi, pagine e allegati.
+      return await rpc(supabase, "redact_node_history", { p_id: validateRedact(body) });
+    }
     if (pathname === "/sync/push") {
       const { deviceId, changes } = validatePush(body);
       return await rpc(supabase, "sync_push", { p_device_id: deviceId, p_changes: changes });
@@ -172,11 +178,21 @@ export default {
     const supabase = { url: env.SUPABASE_URL, secretKey: env.SUPABASE_SECRET_KEY };
     const now = new Date(controller.scheduledTime);
     if (controller.cron === RECOVERY_CRON) {
-      if (!(await backupExists(supabase, now))) await dailyBackup(supabase, now);
+      if (await backupExists(supabase, now)) return;
+      await ping(env.HEALTHCHECK_URL, (await dailyBackup(supabase, now)) === "saved", "recupero");
       return;
     }
     // Il backup parte anche se la pulizia fallisce; si aspetta tutto (niente waitUntil) così gli errori restano nel run.
     await Promise.allSettled([emptyStorageTrash(supabase), removeOrphans(supabase, now)]);
-    await dailyBackup(supabase, now);
+    const result = await dailyBackup(supabase, now);
+    const size = await checkDatabaseSize(supabase);
+    if (size !== undefined && size > DB_WARNING_BYTES) {
+      console.error(`Database a ${Math.round(size / 1048576)} MB: il piano gratuito si ferma a 500 MB`);
+      await ping(env.HEALTHCHECK_URL, false, `database a ${Math.round(size / 1048576)} MB`);
+    } else if (result === "saved") {
+      await ping(env.HEALTHCHECK_URL, true);
+    } else {
+      await ping(env.HEALTHCHECK_URL, false, `backup ${result}`);
+    }
   },
 } satisfies ExportedHandler<Env>;

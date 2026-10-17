@@ -1,0 +1,39 @@
+name: restore-drill
+
+# Prova mensile del ripristino: scarica l'ultimo backup completo e ne verifica integrità
+# (sha256, dimensioni, conteggi) senza toccare il database. Serve il secret SUPABASE_SECRET_KEY.
+on:
+  schedule:
+    - cron: "17 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend/worker-ai
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/worker-ai/package-lock.json
+      - run: npm ci
+      - name: Verifica l'ultimo backup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          if [ -z "$SUPABASE_SECRET_KEY" ]; then
+            echo "::warning::SUPABASE_SECRET_KEY non è tra i secrets del repository: la prova di ripristino non è stata eseguita."
+            exit 0
+          fi
+          npm run restore -- --latest --verify
