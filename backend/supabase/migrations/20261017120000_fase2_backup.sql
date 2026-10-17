@@ -206,6 +206,7 @@ begin
 end;
 $$;
 
+-- Con `where true`: l'API REST di Supabase rifiuta DELETE e UPDATE senza WHERE (pg-safeupdate).
 -- Prima di un ripristino su un database non vuoto: svuota le tabelle sincronizzate. Serve la parola d'ordine.
 create function backup_restore_wipe(p_confirm text)
 returns void language plpgsql set search_path = '' as $$
@@ -213,19 +214,19 @@ begin
   if p_confirm is distinct from 'cancella-tutto' then
     raise exception 'conferma mancante' using errcode = '22023';
   end if;
-  delete from public.ink_pages;
-  delete from public.attachments;
-  delete from public.edges;
-  delete from public.node_versions;
-  delete from public.nodes;
-  delete from public.purged;
+  delete from public.ink_pages where true;
+  delete from public.attachments where true;
+  delete from public.edges where true;
+  delete from public.node_versions where true;
+  delete from public.nodes where true;
+  delete from public.purged where true;
 end;
 $$;
 
 -- Ultimo passo del ripristino: nuova epoca, i client ripartono dal pull completo.
 create function backup_restore_finish()
 returns integer language sql set search_path = '' as $$
-  update public.sync_meta set epoch = epoch + 1 returning epoch;
+  update public.sync_meta set epoch = epoch + 1 where id returning epoch;
 $$;
 
 -- 4. Conservazione: storico dei nodi e righe eliminate non crescono senza limite.
@@ -291,7 +292,7 @@ $$;
 -- Il Worker segna il backup riuscito; il keep-alive (chiave pubblica) ne legge solo l'età.
 create function backup_mark_done()
 returns void language sql set search_path = '' as $$
-  update public.sync_meta set last_backup_at = now();
+  update public.sync_meta set last_backup_at = now() where id;
 $$;
 
 create function backup_status()
