@@ -10,7 +10,8 @@ import { AREAS, isLocalOnly, LABELS, LOCAL_ONLY_TAG, NODE_TYPES, type NodeRecord
 import { Privacy } from "./privacy";
 import { Repository } from "./repository";
 import { IndexedDBStore } from "./store";
-import { AuthError, HttpTransport, SyncClient } from "./sync";
+import { Poller, type PollResult } from "./polling";
+import { AuthError, HttpTransport, OutdatedError, SyncClient } from "./sync";
 import "./style.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -172,7 +173,7 @@ function renderHealthBanner(node: NodeRecord) {
   const button = (text: string, action: () => void) => {
     const b = document.createElement("button");
     b.textContent = text;
-    b.onclick = () => { flushSave(); action(); persist(); open(node.id); void runSync(); };
+    b.onclick = () => { flushSave(); action(); persist(); open(node.id); poller.poke(); };
     return b;
   };
   const message = document.createElement("span");
@@ -221,7 +222,7 @@ function renderRejections() {
         renderRejections();
         renderList();
         if (selected && !store.node(selected)) closeEditor();
-        void runSync();
+        poller.poke();
       };
       return b;
     };
@@ -243,23 +244,30 @@ function editing(): boolean {
   return saveTimer !== undefined || $("node").contains(document.activeElement);
 }
 
-async function runSync() {
+async function runSync(): Promise<PollResult | "skipped"> {
   flushSave();
   if (!syncEnabled()) {
     setStatus("offline", "Sincronizzazione disattivata: gli appunti restano su questo computer");
-    return;
+    return "skipped";
   }
+  let outcome: PollResult | "skipped" = "ok";
   try {
     const result = await sync.sync();
-    if (result !== "skipped") setStatus("ok", `Sincronizzato alle ${timeFormat.format(new Date())}`);
+    if (result === "skipped") outcome = "skipped";
+    else setStatus("ok", `Sincronizzato alle ${timeFormat.format(new Date())}`);
   } catch (error) {
-    if (error instanceof AuthError) {
+    if (error instanceof OutdatedError) {
+      outcome = "auth";
+      setStatus("error", error.message);
+    } else if (error instanceof AuthError) {
+      outcome = "auth";
       const link = document.createElement("a");
       link.href = "/";
       link.textContent = "Accedi di nuovo";
       link.onclick = (e) => { e.preventDefault(); location.reload(); };
       setStatus("error", "Sessione scaduta: ", link);
     } else {
+      outcome = "offline";
       setStatus("offline", "Offline: le modifiche partono al ritorno della rete");
     }
   }
@@ -269,7 +277,11 @@ async function runSync() {
   else if (selected && !editing()) open(selected);
   // La penna si aggiorna anche mentre la si usa: i tratti non salvati restano.
   else if (selected && mode() === "ink") ink.show(selected);
+  return outcome;
 }
+
+// Ogni 30 secondi, con calma se la rete non va, fermi se la sessione è scaduta, a riposo a scheda nascosta.
+const poller = new Poller(runSync, () => document.visibilityState === "hidden");
 
 // MARK: Tutor
 
@@ -411,7 +423,7 @@ function setupAccount() {
   enabled.checked = syncEnabled();
   enabled.onchange = () => {
     try { localStorage.setItem("syncEnabled", enabled.checked ? "1" : "0"); } catch { /* resta per questa sessione */ }
-    void runSync();
+    poller.poke();
   };
   const report = (text: string) => setStatus("ok", text);
   $("export-all").onclick = async () => {
@@ -513,6 +525,7 @@ async function main() {
   window.addEventListener("pagehide", () => { flushSave(); persist(); });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") { flushSave(); persist(); }
+    else poller.poke();
   });
   document.addEventListener("keydown", (e) => {
     if (!(e.metaKey || e.ctrlKey)) return;
@@ -531,9 +544,9 @@ async function main() {
   renderList();
   renderRejections();
   if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js");
-  await runSync();
-  setInterval(runSync, 30_000);
-  window.addEventListener("online", runSync);
+  poller.start();
+  poller.poke();
+  window.addEventListener("online", () => poller.poke());
 }
 
 void main();

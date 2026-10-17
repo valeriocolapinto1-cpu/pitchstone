@@ -19,6 +19,9 @@ export interface Store {
   removePending(entity: Entity, id: string): void;
   cursor(): number;
   setCursor(cursor: number): void;
+  /** Epoca della sincronizzazione vista l'ultima volta (0 = ancora sconosciuta). */
+  epoch(): number;
+  setEpoch(epoch: number): void;
   /** Segnali di salute che l'utente ha giudicato innocui per questo nodo. */
   dismissedSignals(id: string): string[];
   setDismissedSignals(id: string, signals: string[]): void;
@@ -39,12 +42,13 @@ interface Snapshot {
   attachment: Record<string, ExtraRecord>;
   pending: Record<string, PendingChange>;
   cursor: number;
+  epoch: number;
   dismissed: Record<string, string[]>;
   redact: string[];
 }
 
 function empty(): Snapshot {
-  return { nodes: {}, edges: {}, ink_page: {}, attachment: {}, pending: {}, cursor: 0, dismissed: {}, redact: [] };
+  return { nodes: {}, edges: {}, ink_page: {}, attachment: {}, pending: {}, cursor: 0, epoch: 0, dismissed: {}, redact: [] };
 }
 
 export class MemoryStore implements Store {
@@ -76,6 +80,8 @@ export class MemoryStore implements Store {
   removePending(entity: Entity, id: string) { delete this.data.pending[`${entity}:${id}`]; }
   cursor() { return this.data.cursor; }
   setCursor(cursor: number) { this.data.cursor = cursor; }
+  epoch() { return this.data.epoch; }
+  setEpoch(epoch: number) { this.data.epoch = epoch; }
   dismissedSignals(id: string) { return this.data.dismissed[id] ?? []; }
   setDismissedSignals(id: string, signals: string[]) { this.data.dismissed[id] = [...new Set(signals)].sort(); }
   redactQueue() { return [...this.data.redact]; }

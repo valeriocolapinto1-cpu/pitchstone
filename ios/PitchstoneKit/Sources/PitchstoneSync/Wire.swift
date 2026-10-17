@@ -76,8 +76,20 @@ public struct PushRequest: Encodable, Sendable {
 }
 
 public struct PushResult: Decodable, Sendable {
-    public enum Status: String, Decodable, Sendable {
+    public enum Status: Decodable, Sendable, Equatable {
         case created, updated, merged, rejected
+        /// Uno stato introdotto da una versione successiva del server: la voce resta in outbox e si riprova.
+        case unknown
+
+        public init(from decoder: Decoder) throws {
+            switch try decoder.singleValueContainer().decode(String.self) {
+            case "created": self = .created
+            case "updated": self = .updated
+            case "merged": self = .merged
+            case "rejected": self = .rejected
+            default: self = .unknown
+            }
+        }
     }
 
     public var entity: Entity?
@@ -114,7 +126,7 @@ public struct PushResult: Decodable, Sendable {
         status = try c.decode(Status.self, forKey: .status)
         error = try c.decodeIfPresent(String.self, forKey: .error)
         message = try c.decodeIfPresent(String.self, forKey: .message)
-        if status != .rejected {
+        if status == .created || status == .updated || status == .merged {
             switch entity {
             case .node: node = try c.decode(NodeRecord.self, forKey: .record)
             case .edge: edge = try c.decode(EdgeRecord.self, forKey: .record)
@@ -179,15 +191,18 @@ public struct PullResponse: Decodable, Sendable {
     public var changes: [IncomingChange]
     public var cursor: Int64
     public var hasMore: Bool
+    /// Epoca della sincronizzazione: cambia quando il server viene ripristinato da un backup, e i cursori non valgono più.
+    public var epoch: Int64?
 
-    public init(changes: [IncomingChange], cursor: Int64, hasMore: Bool) {
+    public init(changes: [IncomingChange], cursor: Int64, hasMore: Bool, epoch: Int64? = nil) {
         self.changes = changes
         self.cursor = cursor
         self.hasMore = hasMore
+        self.epoch = epoch
     }
 
     enum CodingKeys: String, CodingKey {
-        case changes, cursor
+        case changes, cursor, epoch
         case hasMore = "has_more"
     }
 }

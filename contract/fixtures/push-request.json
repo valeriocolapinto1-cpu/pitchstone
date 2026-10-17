@@ -1,0 +1,26 @@
+{
+  "device_id": "ipad-1a2b3c4d",
+  "changes": [
+    { "entity": "node", "base_version": null, "data": {
+      "id": "10000000-0000-4000-8000-000000000001", "type": "concept", "title": "Derivata", "body_md": "Il limite del rapporto incrementale.",
+      "area": "studio", "tags": ["analisi", "esame"], "version": 0, "created_at": "2026-10-14T09:00:00.123Z",
+      "updated_at": "2026-10-14T09:00:00.123Z", "deleted_at": null, "device_id": "ipad-1a2b3c4d" } },
+    { "entity": "node", "base_version": 2, "data": {
+      "id": "10000000-0000-4000-8000-000000000002", "type": "idea", "title": "Integrale", "body_md": "",
+      "area": "interessi", "tags": [], "version": 2, "created_at": "2026-10-13T09:00:00.000Z",
+      "updated_at": "2026-10-14T10:00:00.000Z", "deleted_at": "2026-10-14T10:00:00.000Z", "device_id": "ipad-1a2b3c4d" } },
+    { "entity": "edge", "base_version": null, "data": {
+      "id": "10000000-0000-4000-8000-0000000000e1", "source_id": "10000000-0000-4000-8000-000000000001",
+      "target_id": "10000000-0000-4000-8000-000000000002", "kind": "manual", "label": "inversa di", "version": 0,
+      "created_at": "2026-10-14T09:05:00.000Z", "deleted_at": null } },
+    { "entity": "ink_page", "base_version": null, "data": {
+      "id": "10000000-0000-4000-8000-0000000000a1", "node_id": "10000000-0000-4000-8000-000000000001", "page_no": 0,
+      "background": "grid", "ink_data": "QUJDRA==", "attachment_id": null, "pdf_page": null, "version": 0,
+      "created_at": "2026-10-14T09:10:00.000Z", "updated_at": "2026-10-14T09:10:00.000Z", "deleted_at": null, "device_id": "ipad-1a2b3c4d" } },
+    { "entity": "attachment", "base_version": null, "data": {
+      "id": "10000000-0000-4000-8000-0000000000b1", "node_id": null, "kind": "pdf", "storage_path": "10000000-0000-4000-8000-0000000000b1",
+      "size_bytes": 104857600, "page_count": 12, "sha256": "abababababababababababababababababababababababababababababababab",
+      "file_name": "Analisi.pdf", "part_count": 3, "version": 0, "created_at": "2026-10-14T09:15:00.000Z",
+      "updated_at": "2026-10-14T09:15:00.000Z", "deleted_at": null, "device_id": "ipad-1a2b3c4d" } }
+  ]
+}

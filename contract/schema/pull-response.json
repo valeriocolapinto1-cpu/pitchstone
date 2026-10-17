@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "POST /sync/pull: risposta",
+  "type": "object",
+  "required": ["changes", "cursor", "has_more"],
+  "properties": {
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["entity", "data"],
+        "properties": { "entity": { "type": "string" }, "data": { "type": "object" } }
+      }
+    },
+    "cursor": { "type": "integer", "minimum": 0 },
+    "has_more": { "type": "boolean" },
+    "epoch": { "type": "integer", "minimum": 1 }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "type", "title", "body_md", "area", "tags", "version", "created_at", "updated_at", "deleted_at", "device_id", "server_seq"]
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "source_id", "target_id", "kind", "label", "version", "created_at", "deleted_at", "server_seq"]
+    },
+    "ink_page": {
+      "type": "object",
+      "required": ["id", "node_id", "page_no", "background", "ink_data", "attachment_id", "pdf_page", "version", "created_at", "updated_at", "deleted_at", "device_id", "server_seq"]
+    },
+    "attachment": {
+      "type": "object",
+      "required": ["id", "node_id", "kind", "storage_path", "size_bytes", "page_count", "sha256", "file_name", "part_count", "version", "created_at", "updated_at", "deleted_at", "device_id", "server_seq"]
+    },
+    "purged": { "type": "object", "required": ["entity", "id"] }
+  }
+}

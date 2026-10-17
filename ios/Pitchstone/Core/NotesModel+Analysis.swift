@@ -76,7 +76,9 @@ extension NotesModel {
     @discardableResult
     func confirmHealth(_ id: UUID) -> UUID? {
         guard let node = node(id) else { return nil }
-        if node.version == 0 {
+        // Già sul server anche se la versione locale non lo dice ancora (una modifica in attesa parte da una base).
+        let onServer = node.version > 0 || store.pendingChange(.node, id)?.baseVersion != nil
+        if !onServer {
             let moved = update(id) { $0.area = .salute }
             guard moved else { return nil }
             onHealthConfirmed?(id)

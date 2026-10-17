@@ -93,6 +93,10 @@ final class NotesModel {
         let files = DirectoryAttachmentFiles(directory: attachmentsDirectory ?? Self.defaultAttachmentsDirectory)
         self.files = files
         repository.purgeTrash { files.remove($0) }
+        // Un salvataggio che fallisce non si perde in silenzio: l'utente lo vede.
+        store.onSaveError = { [weak self] error in
+            self?.errorMessage = String(localized: "Salvataggio non riuscito: \(error.localizedDescription)")
+        }
         reload()
         if startSync { configureSync() }
         if autoIndex { scheduleIndexing() }

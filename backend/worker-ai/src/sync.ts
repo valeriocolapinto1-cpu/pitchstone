@@ -9,12 +9,42 @@ export interface SupabaseConfig {
 
 export const MAX_BODY_BYTES = 5 * 1024 * 1024;
 export const MAX_CHANGES = 500;
+/** Versione del contratto della sincronizzazione (contract/README.md). */
+export const API_VERSION = 1;
+/** Sotto questa versione un client riceve 426: serve aggiornare l'app. Un client senza intestazione passa. */
+export const MIN_API_VERSION = 1;
 /** Tempo massimo per una chiamata a Supabase. */
 export const UPSTREAM_TIMEOUT_MS = 10_000;
-const MAX_TITLE_CHARS = 500;
-const MAX_TAGS = 50;
-const MAX_TAG_CHARS = 100;
-const MAX_FILE_NAME_CHARS = 255;
+export const MAX_TITLE_CHARS = 500;
+export const MAX_TAGS = 50;
+export const MAX_TAG_CHARS = 100;
+export const MAX_FILE_NAME_CHARS = 255;
+export const MAX_PULL_LIMIT = 1000;
+export const DEFAULT_PULL_LIMIT = 500;
+
+/** I limiti in vigore, per `GET /sync/config`: i client non devono indovinarli. */
+export function limits() {
+  return {
+    api: API_VERSION,
+    min_api: MIN_API_VERSION,
+    max_changes: MAX_CHANGES,
+    max_body_bytes: MAX_BODY_BYTES,
+    max_pull_limit: MAX_PULL_LIMIT,
+    default_pull_limit: DEFAULT_PULL_LIMIT,
+    max_title_chars: MAX_TITLE_CHARS,
+    max_tags: MAX_TAGS,
+    max_tag_chars: MAX_TAG_CHARS,
+    max_file_name_chars: MAX_FILE_NAME_CHARS,
+  };
+}
+
+/** `X-Pitchstone-Api` della richiesta: 426 se è sotto il minimo; senza intestazione (client precedenti) passa. */
+export function apiVersionCheck(header: string | null): Response | null {
+  if (header === null) return null;
+  const version = Number(header);
+  if (Number.isInteger(version) && version >= MIN_API_VERSION) return null;
+  return Response.json({ error: "versione dell'app non supportata: aggiornala", min_api: MIN_API_VERSION }, { status: 426 });
+}
 const DEVICE_ID = /^[A-Za-z0-9._-]{1,64}$/;
 const ENTITIES = new Set(["node", "edge", "ink_page", "attachment"]);
 
@@ -94,11 +124,11 @@ export function validateErase(body: unknown): void {
 
 export function validatePull(body: unknown): { cursor: number; limit: number } {
   if (typeof body !== "object" || body === null) throw new BadRequest("body non valido");
-  const { cursor, limit = 500 } = body as { cursor?: unknown; limit?: unknown };
+  const { cursor, limit = DEFAULT_PULL_LIMIT } = body as { cursor?: unknown; limit?: unknown };
   if (typeof cursor !== "number" || !Number.isSafeInteger(cursor) || cursor < 0) {
     throw new BadRequest("cursor non valido");
   }
-  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 1000) {
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > MAX_PULL_LIMIT) {
     throw new BadRequest("limit non valido");
   }
   return { cursor, limit };

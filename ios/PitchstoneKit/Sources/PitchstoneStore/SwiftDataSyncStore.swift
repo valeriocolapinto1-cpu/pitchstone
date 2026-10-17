@@ -10,11 +10,25 @@ public final class SwiftDataSyncStore: SyncStore {
     // Il contesto non tiene in vita il container: va trattenuto qui.
     private let container: ModelContainer
     private let context: ModelContext
+    private let defaults: UserDefaults
 
-    public init(container: ModelContainer) {
+    /// Vero se l'ultimo salvataggio è fallito (e il contesto è stato annullato): la sync non fa avanzare il cursore.
+    public var saveFailed = false
+    /// Chiamata a ogni salvataggio fallito, per mostrare l'errore all'utente invece di perderlo in silenzio.
+    public var onSaveError: ((Error) -> Void)?
+
+    public init(container: ModelContainer, defaults: UserDefaults = .standard) {
         self.container = container
+        self.defaults = defaults
         context = container.mainContext
         context.autosaveEnabled = false
+    }
+
+    /// Epoca della sincronizzazione vista l'ultima volta. Sta nelle preferenze e non nel database: così non serve
+    /// cambiare lo schema.
+    public var epoch: Int64 {
+        get { Int64(defaults.integer(forKey: "syncEpoch")) }
+        set { defaults.set(Int(newValue), forKey: "syncEpoch") }
     }
 
     /// Dentro `performBatch` si salva ogni 200 operazioni invece che a ogni record: le
@@ -39,7 +53,10 @@ public final class SwiftDataSyncStore: SyncStore {
         do {
             try context.save()
         } catch {
-            assertionFailure("SwiftData save: \(error)")
+            // Il contesto sporco non deve restare in giro: si annulla, e l'errore si vede.
+            context.rollback()
+            saveFailed = true
+            onSaveError?(error)
         }
     }
 

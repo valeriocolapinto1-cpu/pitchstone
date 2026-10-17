@@ -7,6 +7,18 @@ public protocol SyncTransport: Sendable {
     func pull(_ request: PullRequest) async throws -> PullResponse
 }
 
+/// Errori della sync che non vengono dalla rete.
+public enum SyncError: Error, Equatable, CustomStringConvertible, Sendable {
+    /// Il salvataggio su disco è fallito: il cursore non avanza, la sync si riprova.
+    case localSaveFailed
+
+    public var description: String {
+        switch self {
+        case .localSaveFailed: "salvataggio locale non riuscito"
+        }
+    }
+}
+
 public struct Rejection: Equatable, Sendable {
     public var entity: Entity
     public var id: UUID
@@ -65,12 +77,37 @@ public final class SyncEngine {
         running = true
         defer { running = false }
         do {
+            retryParked()
             await uploadAttachments()
             let pushed = try await pushAll()
             let pulled = try await pullAll()
             return .synced(pushed: pushed, pulled: pulled)
         } catch {
             return .failed(String(describing: error))
+        }
+    }
+
+    // MARK: Voci parcheggiate
+
+    /// Rifiuti che si risolvono da soli (manca ancora il nodo a cui la voce si appoggia): `missing_parent`
+    /// del server, o il suo SQLSTATE 23503 da un server precedente.
+    private static let transientRejections: Set<String> = ["missing_parent", "23503"]
+    /// Tentativi automatici per voce e per sessione, dopo i quali serve la scelta dell'utente.
+    static let maxParkedRetries = 5
+    private var parkedRetries: [Key: (attempts: Int, next: Date)] = [:]
+
+    /// La coda parcheggiata converge: una voce rifiutata perché mancava il genitore riparte con attese
+    /// crescenti (30 s, 1 min, 2 min…) fino a `maxParkedRetries` volte; le altre aspettano l'utente.
+    /// Il genitore che arriva la fa ripartire subito (`retryDependents`).
+    private func retryParked(now: Date = Date()) {
+        for var pending in store.pendingChanges() {
+            guard let reason = pending.rejection, Self.transientRejections.contains(reason) else { continue }
+            let key = Key(entity: pending.entity, id: pending.id)
+            let state = parkedRetries[key] ?? (attempts: 0, next: .distantPast)
+            guard state.attempts < Self.maxParkedRetries, now >= state.next else { continue }
+            parkedRetries[key] = (state.attempts + 1, now.addingTimeInterval(30 * pow(2, Double(state.attempts))))
+            pending.rejection = nil
+            store.savePending(pending)
         }
     }
 
@@ -125,13 +162,29 @@ public final class SyncEngine {
             if batch.isEmpty { return pushed }
             sent.formUnion(batch.map { Key(entity: $0.pending.entity, id: $0.pending.id) })
             let response = try await transport.push(PushRequest(deviceID: deviceID, changes: batch.map(\.change)))
-            guard response.results.count == batch.count else {
-                throw URLError(.badServerResponse)
-            }
-            for (snapshot, result) in zip(batch, response.results) {
-                apply(result, for: snapshot)
+            let matched = try results(of: response, for: batch)
+            // Un'unica transazione per tutto il lotto: o si salva tutto, o niente.
+            store.performBatch {
+                for (snapshot, result) in zip(batch, matched) {
+                    if let result { apply(result, for: snapshot) }
+                }
             }
             pushed += batch.count
+        }
+    }
+
+    /// Il risultato di ogni voce, cercato per entità e id e non per posizione: un server che riordina
+    /// o salta una voce non deve far salvare il record di una voce su un'altra. Un risultato senza id
+    /// vale per la sua posizione; uno con un id che non è di nessuna voce del lotto non vale per nessuna.
+    private func results(of response: PushResponse, for batch: [Snapshot]) throws -> [PushResult?] {
+        guard response.results.count == batch.count else { throw URLError(.badServerResponse) }
+        var byKey: [Key: PushResult] = [:]
+        for result in response.results {
+            if let entity = result.entity, let id = result.id { byKey[Key(entity: entity, id: id)] = result }
+        }
+        return zip(batch, response.results).map { snapshot, positional in
+            if let found = byKey[Key(entity: snapshot.pending.entity, id: snapshot.pending.id)] { return found }
+            return positional.entity == nil || positional.id == nil ? positional : nil
         }
     }
 
@@ -141,7 +194,13 @@ public final class SyncEngine {
     private func nextBatch(excluding sent: Set<Key>) -> [Snapshot] {
         var batch: [Snapshot] = []
         var bytes = 0
-        for pending in store.pendingChanges()
+        // L'intera coda in ordine di entità prima del taglio: se le voci sono più di un lotto, i nodi
+        // partono comunque prima degli archi e delle pagine che li citano.
+        let order: [Entity: Int] = [.node: 0, .attachment: 1, .edge: 2, .inkPage: 3]
+        let queue = store.pendingChanges().enumerated()
+            .sorted { (order[$0.element.entity] ?? 9, $0.offset) < (order[$1.element.entity] ?? 9, $1.offset) }
+            .map(\.element)
+        for pending in queue
         where pending.rejection == nil && !sent.contains(Key(entity: pending.entity, id: pending.id)) {
             if batch.count == Self.batchSize { break }
             // Un allegato parte solo quando le sue parti sono nel bucket. Uno mai caricato
@@ -167,10 +226,7 @@ public final class SyncEngine {
             if bytes > Self.maxBatchBytes, !batch.isEmpty { break }
             batch.append(Snapshot(pending: pending, change: change))
         }
-        let order: [Entity: Int] = [.node: 0, .attachment: 1, .edge: 2, .inkPage: 3]
-        return batch.enumerated()
-            .sorted { (order[$0.element.pending.entity]!, $0.offset) < (order[$1.element.pending.entity]!, $1.offset) }
-            .map(\.element)
+        return batch
     }
 
     private func isHeld(_ pending: PendingChange) -> Bool {
@@ -204,6 +260,11 @@ public final class SyncEngine {
         // Voce sparita durante il push (record diventato sensibile o eliminato):
         // il record locale non va toccato.
         guard let current = store.pendingChange(entity, id) else { return }
+        // Uno stato che questa versione non conosce: la voce resta in outbox e si riprova.
+        guard result.status != .unknown else { return }
+        // Il record della risposta deve essere quello della voce.
+        let recordID = result.node?.id ?? result.edge?.id ?? result.inkPage?.id ?? result.attachment?.id
+        if let recordID, recordID != id { return }
         guard result.status != .rejected else {
             // Parcheggiata, non scartata: il contenuto locale resta e il pull non lo sovrascrive.
             if current.revision == snapshot.pending.revision {
@@ -271,7 +332,20 @@ public final class SyncEngine {
         var pulled = 0
         while true {
             let response = try await transport.pull(PullRequest(cursor: store.cursor, limit: Self.batchSize))
-            for change in response.changes { apply(change) }
+            if let epoch = response.epoch, epoch != store.epoch {
+                let known = store.epoch != 0
+                store.epoch = epoch
+                if known {
+                    // Il server è stato ripristinato da un backup: i cursori non valgono più, si riparte da zero
+                    // (la pagina arrivata con il cursore vecchio si scarta).
+                    store.cursor = 0
+                    continue
+                }
+            }
+            store.saveFailed = false
+            // Una transazione per pagina. Se non si riesce a salvare, il cursore non avanza: la pagina si rilegge.
+            store.performBatch { for change in response.changes { apply(change) } }
+            guard !store.saveFailed else { throw SyncError.localSaveFailed }
             pulled += response.changes.count
             store.cursor = max(store.cursor, response.cursor)
             if !response.hasMore || response.changes.isEmpty { return pulled }

@@ -187,7 +187,7 @@ struct SyncEngineTests {
         #expect(a.engine.rejections.map(\.id) == [edge.id])
         #expect(server.node(node.id) != nil, "il rifiuto non blocca le altre modifiche")
 
-        // Una nuova sync non lo reinvia e non dimentica il rifiuto.
+        // Una nuova sync lo riprova una volta da sola (poi con attese crescenti) e non dimentica il rifiuto.
         _ = await a.engine.sync()
         #expect(a.engine.rejections.map(\.id) == [edge.id])
         #expect(a.store.edge(edge.id) != nil)

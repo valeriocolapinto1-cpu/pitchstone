@@ -3,7 +3,8 @@ import { backupExists, checkDatabaseSize, dailyBackup, DB_WARNING_BYTES, ping } 
 import { chat, DEFAULT_MODEL, validateChat } from "./chat";
 import { emptyBucket, emptyStorageTrash, removeOrphans, signUrl, validateSign } from "./storage";
 import {
-  BadRequest, MAX_BODY_BYTES, PayloadTooLarge, rpc, validateErase, validateExport, validatePull, validatePush, validateRedact,
+  API_VERSION, apiVersionCheck, BadRequest, limits, MAX_BODY_BYTES, PayloadTooLarge, rpc, validateErase, validateExport, validatePull,
+  validatePush, validateRedact,
 } from "./sync";
 
 /** Il secondo cron rifà solo il backup, se quello delle 04:30 non è riuscito. */
@@ -64,7 +65,7 @@ async function readJson(request: Request): Promise<unknown> {
  * moderno dichiara la provenienza in Sec-Fetch-Site e in Origin. L'iPad (service token) non manda
  * né l'una né l'altra ma usa sempre JSON.
  */
-function crossSite(request: Request): Response | null {
+function crossSiteOrigin(request: Request): Response | null {
   const site = request.headers.get("sec-fetch-site");
   if (site !== null && site !== "same-origin" && site !== "none") {
     return Response.json({ error: "richiesta da un altro sito" }, { status: 403 });
@@ -73,6 +74,12 @@ function crossSite(request: Request): Response | null {
   if (origin !== null && origin !== new URL(request.url).origin) {
     return Response.json({ error: "richiesta da un altro sito" }, { status: 403 });
   }
+  return null;
+}
+
+function crossSite(request: Request): Response | null {
+  const origin = crossSiteOrigin(request);
+  if (origin) return origin;
   const type = (request.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
   if (type !== "application/json") {
     return Response.json({ error: "serve content-type application/json" }, { status: 415 });
@@ -90,15 +97,19 @@ async function handle(request: Request, env: Env): Promise<Response> {
     return Response.json({ status: "ok" });
   }
 
-  if (!["/sync/push", "/sync/pull", "/sync/redact", "/storage/sign", "/ai/chat", "/account/export", "/account/erase"].includes(pathname)) {
+  // L'unica richiesta in lettura: i limiti in vigore. Gli altri percorsi sono tutti POST.
+  const config = request.method === "GET" && pathname === "/sync/config";
+  if (!config && !["/sync/push", "/sync/pull", "/sync/redact", "/storage/sign", "/ai/chat", "/account/export", "/account/erase"].includes(pathname)) {
     return new Response("Not Found", { status: 404 });
   }
-  if (request.method !== "POST") {
+  if (!config && request.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405, headers: { allow: "POST" } });
   }
   // Prima i controlli che non costano niente, poi la verifica del token.
-  const rejected = crossSite(request);
+  const rejected = config ? crossSiteOrigin(request) : crossSite(request);
   if (rejected) return rejected;
+  const outdated = apiVersionCheck(request.headers.get("x-pitchstone-api"));
+  if (outdated) return outdated;
 
   const access = await authenticate(request.headers.get("cf-access-jwt-assertion"), {
     teamDomain: normalizeTeamDomain(env.ACCESS_TEAM_DOMAIN ?? ""),
@@ -116,6 +127,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   });
   console.log(`${pathname} ${label(access.identity)} ${allowed ? "ok" : "negato"}`);
   if (!allowed) return Response.json({ error: "non autorizzato" }, { status: 403 });
+  if (config) return Response.json(limits());
 
   try {
     if (pathname === "/ai/chat") {
@@ -178,6 +190,7 @@ function secure(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("cache-control", "no-store");
   headers.set("x-content-type-options", "nosniff");
+  headers.set("x-pitchstone-api", String(API_VERSION));
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
