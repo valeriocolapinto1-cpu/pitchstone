@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-3-privacy
-Commit: f5edf0fb5271713702726434178bb1202ea0296f
+Branch: main
+Commit: 93f59f39330b288619974e1ce962f71e9d3ba4bb
