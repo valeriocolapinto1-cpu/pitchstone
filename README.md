@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-7-web
-Commit: 5ccbe2a031314134b9e2a87decf0976061a6cbcd
+Branch: main
+Commit: bcd7216dbf89ecd85baec77b940eb79ce74a3b80
