@@ -13,3 +13,6 @@ Stato: accettata, 2026-10-14. Riferimento: ARCHITETTURA.md, sezioni 6.6, 7 e 9 (
 
 - Il backup sul server copre i dati sincronizzati, non i quiz e le statistiche (solo locali, ADR 0011).
 - La password del backup di salute non si recupera.
+
+## Aggiornamento (Fase 8)
+Il backup cifrato dei dati di salute passa al formato `PSB2`: PBKDF2-SHA256 con 600 000 iterazioni scritte nell'intestazione, e intestazione, iterazioni e sale come dati autenticati di AES-GCM. L'esito di `CCKeyDerivationPBKDF` e quello della generazione del sale vengono controllati; un file con iterazioni fuori scala (oltre 10 milioni) o oltre 600 MB si rifiuta prima di derivare la chiave. I file `PSB1` si aprono ancora.
