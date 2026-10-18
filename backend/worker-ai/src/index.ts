@@ -98,7 +98,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
   }
 
   // L'unica richiesta in lettura: i limiti in vigore. Gli altri percorsi sono tutti POST.
-  const config = request.method === "GET" && pathname === "/sync/config";
+  const status = request.method === "GET" && pathname === "/status";
+  const config = status || (request.method === "GET" && pathname === "/sync/config");
   if (!config && !["/sync/push", "/sync/pull", "/sync/redact", "/storage/sign", "/ai/chat", "/account/export", "/account/erase"].includes(pathname)) {
     return new Response("Not Found", { status: 404 });
   }
@@ -127,6 +128,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   });
   console.log(`${pathname} ${label(access.identity)} ${allowed ? "ok" : "negato"}`);
   if (!allowed) return Response.json({ error: "non autorizzato" }, { status: 403 });
+  if (status) return connectionStatus(env);
   if (config) return Response.json(limits());
 
   try {
@@ -172,6 +174,21 @@ async function handle(request: Request, env: Env): Promise<Response> {
     if (error instanceof BadRequest) return Response.json({ error: error.message }, { status: 400 });
     throw error;
   }
+}
+
+/** Stato per la schermata "Connessione" della PWA: Worker, database, Gemini e ultimo backup. */
+async function connectionStatus(env: Env): Promise<Response> {
+  const body: Record<string, unknown> = { api: API_VERSION, gemini: Boolean(env.GEMINI_API_KEY), database: false, last_backup_at: null, backup_age_hours: null };
+  if (env.SUPABASE_URL && env.SUPABASE_SECRET_KEY) {
+    const response = await rpc({ url: env.SUPABASE_URL, secretKey: env.SUPABASE_SECRET_KEY }, "backup_status", {});
+    if (response.ok) {
+      const data = (await response.json().catch(() => null)) as { last_backup_at?: string | null; age_hours?: number | null } | null;
+      body.database = true;
+      body.last_backup_at = data?.last_backup_at ?? null;
+      body.backup_age_hours = data?.age_hours ?? null;
+    }
+  }
+  return Response.json(body);
 }
 
 /** Cancella tutto dal server: database, poi file degli allegati e backup. */

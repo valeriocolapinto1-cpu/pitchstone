@@ -520,12 +520,20 @@ main {
 #health[hidden] { display: none; }
 #health span { flex: 1 1 260px; }
 #health button { padding: 3px 10px; font-size: 12px; }
-#account { padding: 6px 12px 10px; font-size: 12px; color: var(--muted); }
-#account summary { cursor: pointer; padding: 4px 0; }
-#account button, #account label { display: block; margin-top: 6px; }
+#account, #connection { padding: 6px 12px 10px; font-size: 12px; color: var(--muted); }
+#account summary, #connection summary { cursor: pointer; padding: 4px 0; }
+#account button, #account label, #connection button { display: block; margin-top: 6px; }
 #account button { padding: 3px 8px; font-size: 12px; }
 #storage-warning {
   position: fixed; left: 0; right: 0; top: 0; z-index: 20; padding: 8px 16px; text-align: center;
   background: var(--danger); color: #fff; font-size: 13px;
 }
 #storage-warning[hidden] { display: none; }
+
+.count-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#trash-view[aria-pressed="true"] { background: var(--selected); }
+#undo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; margin: 0 8px; border-radius: 8px; background: var(--selected); font-size: 13px; }
+#undo[hidden] { display: none; }
+#list .restore { grid-column: 1 / -1; justify-self: start; }
+#connection-result .warn { color: var(--danger, #b3261e); }
+#connection-result div { padding: 2px 0; font-size: 13px; }

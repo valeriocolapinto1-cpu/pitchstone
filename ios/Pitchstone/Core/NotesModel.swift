@@ -328,7 +328,7 @@ final class NotesModel {
     func changed() {
         if autoIndex {
             scheduleIndexing()
-            scheduleAnalysis()
+            if autoAnalysis { scheduleAnalysis() }
         }
         reload()
         scheduleSync()
@@ -368,6 +368,13 @@ final class NotesModel {
     }
 
     var hasCredentials: Bool { AccessKeychain.load() != nil }
+
+    /// Analisi automatica in background dei nodi modificati (modello locale): spenta di default, si può sempre
+    /// lanciare a mano da un nodo. Il rilevamento dei dati di salute non dipende da questa opzione.
+    var autoAnalysis: Bool {
+        get { defaults.object(forKey: "autoAnalysis") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "autoAnalysis") }
+    }
 
     /// Interruttore globale "mai nel cloud": con la sync spenta niente parte dall'iPad, nemmeno verso Gemini.
     var syncEnabled: Bool {

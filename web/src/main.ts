@@ -8,6 +8,7 @@ import { AREAS, isLocalOnly, LABELS, LOCAL_ONLY_TAG, NODE_TYPES, type NodeRecord
 import { Privacy } from "./privacy";
 import { Repository } from "./repository";
 import { IndexedDBStore } from "./store";
+import { describeFailure, describeStatus, fetchStatus, type StatusLine } from "./status";
 import { Poller, type PollResult } from "./polling";
 import { AuthError, HttpTransport, OutdatedError, SyncClient } from "./sync";
 import "./style.css";
@@ -52,11 +53,19 @@ function searchKey(n: NodeRecord): string {
   return key;
 }
 
+/** Nodi nel cestino, i più recenti per primi: il server li elimina dopo 30 giorni. */
+function trashed(): NodeRecord[] {
+  return store.nodes().filter((n) => n.deleted_at).sort((a, b) => (b.deleted_at ?? "").localeCompare(a.deleted_at ?? ""));
+}
+
+let showTrash = false;
+
 function renderList() {
   const q = titleKey($<HTMLInputElement>("search").value);
-  const all = active();
+  const all = showTrash ? trashed() : active();
   const shown = q ? all.filter((n) => searchKey(n).includes(q)) : all;
   $("count").textContent = q ? `${shown.length} di ${all.length}` : all.length === 1 ? "1 nodo" : `${all.length} nodi`;
+  $("count").textContent += showTrash ? " nel cestino" : "";
   const items = shown.map((n) => {
     const li = document.createElement("li");
     const dot = document.createElement("span");
@@ -72,17 +81,49 @@ function renderList() {
     text.className = "snippet";
     text.textContent = (privacy.isBlocked(n) ? "🔒 " : "") + (snippet(n.body_md) || LABELS.type[n.type]);
     li.append(dot, name, date, text);
-    li.className = n.id === selected ? "active" : "";
-    li.onclick = () => open(n.id);
+    li.className = n.id === selected && !showTrash ? "active" : "";
+    if (showTrash) {
+      const restore = document.createElement("button");
+      restore.className = "ghost restore";
+      restore.textContent = "Ripristina";
+      restore.onclick = () => {
+        repo.restoreNode(n.id);
+        persist();
+        renderList();
+      };
+      li.append(restore);
+    } else {
+      li.onclick = () => open(n.id);
+    }
     return li;
   });
   if (items.length === 0) {
     const li = document.createElement("li");
     li.className = "empty";
-    li.textContent = q ? "Nessun risultato" : "Ancora nessun appunto: creane uno con ＋";
+    li.textContent = q ? "Nessun risultato" : showTrash ? "Il cestino è vuoto" : "Ancora nessun appunto: creane uno con ＋";
     items.push(li);
   }
   $("list").replaceChildren(...items);
+}
+
+let undoTimer: ReturnType<typeof setTimeout> | undefined;
+/** Dopo "Sposta nel cestino": qualche secondo per tornare indietro con un tocco. */
+function offerUndo(id: string) {
+  clearTimeout(undoTimer);
+  const bar = $("undo");
+  const button = document.createElement("button");
+  button.className = "ghost";
+  button.textContent = "Annulla";
+  button.onclick = () => {
+    clearTimeout(undoTimer);
+    bar.hidden = true;
+    repo.restoreNode(id);
+    persist();
+    renderList();
+  };
+  bar.replaceChildren(document.createTextNode("Nodo spostato nel cestino"), button);
+  bar.hidden = false;
+  undoTimer = setTimeout(() => { bar.hidden = true; }, 8000);
 }
 
 function setStatus(state: "ok" | "offline" | "error", ...content: (string | Node)[]) {
@@ -267,6 +308,26 @@ function editing(): boolean {
   return saveTimer !== undefined || $("node").contains(document.activeElement);
 }
 
+let lastSync: Date | undefined;
+
+function renderConnection(lines: StatusLine[]) {
+  $("connection-result").replaceChildren(...lines.map((line) => {
+    const row = document.createElement("div");
+    row.className = line.ok ? "ok" : "warn";
+    row.textContent = `${line.ok ? "✓" : "⚠"} ${line.label}: ${line.text}`;
+    return row;
+  }));
+}
+
+async function checkConnection() {
+  $("connection-result").textContent = "Controllo…";
+  try {
+    renderConnection(describeStatus(await fetchStatus(), lastSync, store.pending().length));
+  } catch (error) {
+    renderConnection([describeFailure(error)]);
+  }
+}
+
 async function runSync(): Promise<PollResult | "skipped"> {
   flushSave();
   if (!syncEnabled()) {
@@ -277,7 +338,7 @@ async function runSync(): Promise<PollResult | "skipped"> {
   try {
     const result = await sync.sync();
     if (result === "skipped") outcome = "skipped";
-    else setStatus("ok", `Sincronizzato alle ${timeFormat.format(new Date())}`);
+    else { lastSync = new Date(); setStatus("ok", `Sincronizzato alle ${timeFormat.format(lastSync)}`); }
   } catch (error) {
     if (error instanceof OutdatedError) {
       outcome = "auth";
@@ -535,9 +596,17 @@ async function main() {
   $("trash").onclick = () => {
     flushSave();
     if (!selected) return;
-    repo.trashNode(selected);
+    const id = selected;
+    repo.trashNode(id);
     persist();
     closeEditor();
+    renderList();
+    offerUndo(id);
+  };
+  $("connection-check").onclick = () => { void checkConnection(); };
+  $("trash-view").onclick = () => {
+    showTrash = !showTrash;
+    $("trash-view").setAttribute("aria-pressed", String(showTrash));
     renderList();
   };
   $("preview").addEventListener("click", (e) => {

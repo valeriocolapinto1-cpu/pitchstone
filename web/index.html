@@ -17,10 +17,16 @@
       <button id="new" class="primary icon" title="Nuovo nodo (⌘N)" aria-label="Nuovo nodo">＋</button>
     </div>
     <label class="search"><input id="search" type="search" placeholder="Cerca negli appunti" aria-label="Cerca (⌘K)"></label>
-    <div id="count" class="count"></div>
+    <div class="count-row"><div id="count" class="count"></div><button id="trash-view" class="ghost" aria-pressed="false">Cestino</button></div>
+    <div id="undo" role="status" hidden></div>
     <ul id="list"></ul>
     <div id="rejections" hidden></div>
     <div id="status">Solo locale</div>
+    <details id="connection">
+      <summary>Connessione</summary>
+      <button id="connection-check" class="ghost">Controlla connessione</button>
+      <div id="connection-result" role="status"></div>
+    </details>
     <details id="account">
       <summary>Dati e privacy</summary>
       <label><input type="checkbox" id="sync-enabled"> Sincronizzazione attiva</label>

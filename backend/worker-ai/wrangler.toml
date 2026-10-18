@@ -46,4 +46,4 @@ command = "npm --prefix ../../web ci && npm --prefix ../../web run build"
 [assets]
 directory = "../../web/dist"
 not_found_handling = "single-page-application"
-run_worker_first = ["/sync/*", "/storage/*", "/ai/*", "/health"]
+run_worker_first = ["/sync/*", "/storage/*", "/ai/*", "/account/*", "/status", "/health"]

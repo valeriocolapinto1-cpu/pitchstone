@@ -1,0 +1,32 @@
+{"query": "cos'è un limite", "expected": "an"}
+{"query": "funzioni continue senza salti", "expected": "an"}
+{"query": "come si calcola la derivata", "expected": "de"}
+{"query": "regola della catena", "expected": "de"}
+{"query": "rapporto incrementale", "expected": "de"}
+{"query": "area sotto la curva", "expected": "in"}
+{"query": "teorema fondamentale del calcolo", "expected": "in"}
+{"query": "integrale definito", "expected": "in"}
+{"query": "determinante matrice invertibile", "expected": "ma"}
+{"query": "autovalori", "expected": "ma"}
+{"query": "polinomio caratteristico", "expected": "ma"}
+{"query": "caduta libera accelerazione", "expected": "fi"}
+{"query": "velocità di un corpo che cade", "expected": "fi"}
+{"query": "primo principio energia", "expected": "te"}
+{"query": "entropia sistema isolato", "expected": "te"}
+{"query": "mitocondri ATP", "expected": "ce"}
+{"query": "dove sta il DNA nella cellula", "expected": "ce"}
+{"query": "respirazione cellulare", "expected": "ce"}
+{"query": "mutazioni e proteine", "expected": "ge"}
+{"query": "Mendel ereditarietà", "expected": "ge"}
+{"query": "quando iniziò la rivoluzione francese", "expected": "st"}
+{"query": "presa della Bastiglia", "expected": "st"}
+{"query": "privilegi feudali abolizione", "expected": "st"}
+{"query": "Rubicone Cesare", "expected": "ro"}
+{"query": "Augusto impero", "expected": "ro"}
+{"query": "complessità dell'ordinamento rapido", "expected": "pr"}
+{"query": "ricorsione caso base", "expected": "pr"}
+{"query": "inflazione prezzi", "expected": "ec"}
+{"query": "tassi di interesse banca centrale", "expected": "ec"}
+{"query": "cosa fa la banca centrale", "expected": "ec"}
+{"query": "derivate e integrali legame", "expected": "in"}
+{"query": "il nucleo della cellula", "expected": "ce"}
