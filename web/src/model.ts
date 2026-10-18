@@ -115,3 +115,28 @@ function computeWikiTargets(markdown: string): string[] {
   }
   return result;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID.test(value);
+}
+
+/** Id accettabile come chiave dell'archivio: `__proto__` e simili non lo sono mai. */
+export function isSafeId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 100
+    && !["__proto__", "constructor", "prototype"].includes(value);
+}
+
+/**
+ * Segna i `[[Titolo]]` per l'anteprima, fuori dai blocchi e dal codice in linea. Il titolo finisce in un attributo:
+ * le virgolette e i `<` si tolgono.
+ */
+export function markWikiLinks(markdown: string): string {
+  const mark = (text: string) => text.replace(/\[\[([^\]|#\n]+)(?:[#|][^\]\n]*)?\]\]/g, (_, title: string) => {
+    const safe = title.replace(/["<>&]/g, "");
+    return `<span class="wiki" tabindex="0" role="link" data-title="${safe}">${safe}</span>`;
+  });
+  // Pezzi alternati: testo normale, poi codice (blocco o in linea), poi testo…
+  return markdown.split(/(```[\s\S]*?```|`[^`\n]*`)/g).map((part, i) => (i % 2 === 1 ? part : mark(part))).join("");
+}

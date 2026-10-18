@@ -4,7 +4,7 @@ import {
 } from "./chat";
 import { clearLocal, ERASE_CONFIRMATION, eraseServer, exportEverything } from "./account";
 import { InkEditor } from "./inkEditor";
-import { AREAS, isLocalOnly, LABELS, LOCAL_ONLY_TAG, NODE_TYPES, type NodeRecord, titleKey } from "./model";
+import { AREAS, isLocalOnly, LABELS, LOCAL_ONLY_TAG, markWikiLinks, NODE_TYPES, type NodeRecord, titleKey } from "./model";
 import { Privacy } from "./privacy";
 import { Repository } from "./repository";
 import { IndexedDBStore } from "./store";
@@ -94,6 +94,12 @@ function renderList() {
       li.append(restore);
     } else {
       li.onclick = () => open(n.id);
+      // Dalla tastiera: Tab arriva sulla riga, Invio o Spazio la apre.
+      li.tabIndex = 0;
+      li.setAttribute("role", "button");
+      li.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.id); }
+      };
     }
     return li;
   });
@@ -152,10 +158,20 @@ function setMode(next: Mode) {
 type Markdown = { sanitize: (html: string) => string; parse: (md: string) => string };
 let markdownReady: Promise<Markdown> | undefined;
 function markdown(): Promise<Markdown> {
-  markdownReady ??= Promise.all([import("dompurify"), import("marked")]).then(([purify, md]) => ({
-    sanitize: (html) => purify.default.sanitize(html),
-    parse: (text) => md.marked.parse(text) as string,
-  }));
+  markdownReady ??= Promise.all([import("dompurify"), import("marked")]).then(([purify, md]) => {
+    const dompurify = purify.default;
+    // Niente immagini (si caricherebbero da fuori, rivelando che la nota è stata aperta) né stili in linea.
+    const options = { FORBID_TAGS: ["img", "style", "form"], FORBID_ATTR: ["style"] };
+    // `data-title` serve solo ai nostri `.wiki`: su ogni altro elemento lo si toglie.
+    dompurify.addHook("afterSanitizeAttributes", (node) => {
+      if (node.hasAttribute("data-title") && !node.classList.contains("wiki")) node.removeAttribute("data-title");
+      if (node.tagName === "A") node.setAttribute("rel", "noopener noreferrer");
+    });
+    return {
+      sanitize: (html) => dompurify.sanitize(html, options),
+      parse: (text) => md.marked.parse(text) as string,
+    };
+  });
   return markdownReady;
 }
 
@@ -164,7 +180,7 @@ async function renderPreview(node: NodeRecord) {
   const token = ++previewToken;
   const { sanitize, parse } = await markdown();
   if (token !== previewToken) return;
-  const md = node.body_md.replace(/\[\[([^\]|#\n]+)(?:[#|][^\]\n]*)?\]\]/g, (_, t: string) => `<span class="wiki" data-title="${t.replace(/"/g, "")}">${t}</span>`);
+  const md = markWikiLinks(node.body_md);
   $("preview").innerHTML = sanitize(`<h1>${sanitize(node.title)}</h1>` + parse(md));
 }
 
@@ -447,7 +463,19 @@ function setupChat() {
     if (!$("chat").hidden) $("chat-input").focus();
   };
   $("chat-toggle").onclick = toggle;
-  $("chat-close").onclick = () => { $("chat").hidden = true; };
+  const closeChat = () => { $("chat").hidden = true; $("chat-toggle").focus(); };
+  $("chat-close").onclick = closeChat;
+  // Esc chiude il tutor; Tab resta dentro finché è aperto.
+  $("chat").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); closeChat(); return; }
+    if (e.key !== "Tab") return;
+    const items = [...$("chat").querySelectorAll<HTMLElement>("button, input, textarea, select, a[href]")].filter((el) => !el.hidden && el.offsetParent !== null);
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (!first || !last) return;
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   $("chat-new").onclick = () => {
     chatAbort?.abort();
     chatAbort = undefined;
@@ -609,8 +637,8 @@ async function main() {
     $("trash-view").setAttribute("aria-pressed", String(showTrash));
     renderList();
   };
-  $("preview").addEventListener("click", (e) => {
-    const title = (e.target as HTMLElement).dataset.title;
+  const followWiki = (e: Event) => {
+    const title = (e.target as HTMLElement).closest<HTMLElement>(".wiki")?.dataset.title;
     if (!title) return;
     flushSave();
     let found = active().find((n) => titleKey(n.title) === titleKey(title));
@@ -619,6 +647,13 @@ async function main() {
       persist();
     }
     open(found.id);
+  };
+  $("preview").addEventListener("click", followWiki);
+  $("preview").addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && (e.target as HTMLElement).classList.contains("wiki")) {
+      e.preventDefault();
+      followWiki(e);
+    }
   });
   // Chiudendo o nascondendo la scheda la modifica in attesa va su disco.
   window.addEventListener("pagehide", () => { flushSave(); persist(); });
