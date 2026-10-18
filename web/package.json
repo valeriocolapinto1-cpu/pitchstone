@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "dompurify": "^3.2.6",
-    "marked": "^16.1.1"
+    "marked": "^18.1.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
