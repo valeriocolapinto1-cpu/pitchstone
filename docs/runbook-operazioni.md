@@ -12,7 +12,7 @@
 4. Verifica: `GET /status` dalla PWA ("Connessione") deve mostrare database raggiungibile e Gemini configurato.
 
 ## Supabase in pausa
-Il piano gratuito mette in pausa il progetto dopo una settimana di inattività. Il workflow `keepalive` lo evita (ogni 3 giorni) e controlla che l'ultimo backup abbia meno di 36 ore. Se il progetto è in pausa: Dashboard → Restore project, attendi, poi lancia a mano il workflow `keepalive` e controlla `/status`. Se il workflow `keepalive` fallisce, GitHub scrive all'amministratore del repository: non ignorare l'email.
+Il piano gratuito mette in pausa il progetto dopo una settimana di inattività. Il workflow `keepalive` lo evita (ogni 3 giorni) e controlla che l'ultimo backup abbia meno di 36 ore. Se il progetto è in pausa: Dashboard → Restore project, attendi, poi lancia a mano il workflow `keepalive` e controlla `/status`. Se il workflow `keepalive` fallisce, GitHub invia una notifica di fallimento (se le notifiche dei workflow sono attive nel tuo profilo): non ignorarla.
 
 ## Rollback del Worker
 `cd backend/worker-ai && npx wrangler deployments list`, poi `npx wrangler rollback <deployment-id>`. Le migrazioni SQL non si annullano: un rollback del Worker verso una versione precedente è sicuro solo se la migrazione corrispondente è compatibile (le migrazioni del progetto sono additive). In dubbio, ripristina dal backup (`runbook-backup.md`).
