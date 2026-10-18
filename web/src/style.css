@@ -537,3 +537,12 @@ main {
 #list .restore { grid-column: 1 / -1; justify-self: start; }
 #connection-result .warn { color: var(--danger, #b3261e); }
 #connection-result div { padding: 2px 0; font-size: 13px; }
+
+/* Accessibilità: focus visibile, bersagli di almeno 24 px, niente animazioni se l'utente le riduce. */
+:focus-visible { outline: 2px solid var(--accent, #0a84ff); outline-offset: 2px; }
+button, select, summary { min-height: 24px; }
+#list li[role="button"] { cursor: pointer; }
+.wiki { cursor: pointer; text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

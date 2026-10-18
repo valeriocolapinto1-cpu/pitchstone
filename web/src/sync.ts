@@ -1,4 +1,4 @@
-import type { EdgeRecord, Entity, ExtraRecord, InkPageRecord, NodeRecord, PendingChange } from "./model";
+import { type EdgeRecord, type Entity, type ExtraRecord, type InkPageRecord, isSafeId, type NodeRecord, type PendingChange } from "./model";
 import type { Store } from "./store";
 
 export interface PushResult {
@@ -390,6 +390,8 @@ export class SyncClient {
   }
 
   private incoming(entity: string, data: unknown, health: Set<string>) {
+    // Un record senza id valido non entra: mai chiavi come `__proto__` nell'archivio.
+    if (!isSafeId((data as { id?: unknown } | null)?.id)) return;
     switch (entity) {
       case "node": {
         const node = data as NodeRecord;

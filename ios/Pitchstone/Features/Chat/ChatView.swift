@@ -38,6 +38,7 @@ struct ChatPanel: View {
 struct ChatView: View {
     @Environment(NotesModel.self) private var notes
     @Environment(\.openSource) private var openSource
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var chat: ChatModel
     @FocusState private var inputFocused: Bool
 
@@ -62,7 +63,11 @@ struct ChatView: View {
                 }
                 .onChange(of: chat.messages.count) {
                     guard let last = chat.messages.last?.id else { return }
-                    withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+                    if reduceMotion {
+                        proxy.scrollTo(last, anchor: .bottom)
+                    } else {
+                        withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+                    }
                 }
             }
             .environment(\.openURL, OpenURLAction { url in

@@ -2,7 +2,7 @@
 // parole, prompt con fonti numerate come sull'iPad (PitchstoneAI/Prompt.swift), poi il
 // modello locale del PC (Ollama su localhost) o, se è spento, Gemini attraverso il Worker.
 import { assess } from "./health";
-import type { NodeRecord } from "./model";
+import { isSafeId, type NodeRecord } from "./model";
 
 export interface Chunk {
   id: string;
@@ -346,7 +346,13 @@ export function linkCitations(answer: string, citations: Citation[]): string {
 export function nodeFromLink(href: string): string | undefined {
   const hash = href.slice(href.indexOf("#"));
   if (!href.includes("#") || !hash.startsWith(SOURCE_LINK)) return undefined;
-  return decodeURIComponent(hash.slice(SOURCE_LINK.length)) || undefined;
+  try {
+    const id = decodeURIComponent(hash.slice(SOURCE_LINK.length));
+    return isSafeId(id) ? id : undefined;
+  } catch {
+    // `%` isolato o sequenza non valida: un link qualunque, non un errore.
+    return undefined;
+  }
 }
 
 // MARK: Modelli
