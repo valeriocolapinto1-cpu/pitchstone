@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-8-ci
-Commit: 0a7601f8721af5465e8767ebda5acf2bd2ee83fb
+Branch: main
+Commit: ddad5ddf910870d88e0b3243e0968d25b52754e0
