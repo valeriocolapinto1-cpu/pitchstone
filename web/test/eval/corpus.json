@@ -1,0 +1,74 @@
+[
+ {
+  "id": "an",
+  "nodeId": "an",
+  "title": "Analisi 1",
+  "text": "Un limite descrive il valore a cui tende una funzione. Le funzioni continue non hanno salti. La derivata misura la variazione istantanea."
+ },
+ {
+  "id": "de",
+  "nodeId": "de",
+  "title": "Derivate",
+  "text": "La derivata di una funzione in un punto è il limite del rapporto incrementale. La regola della catena serve per le funzioni composte."
+ },
+ {
+  "id": "in",
+  "nodeId": "in",
+  "title": "Integrali",
+  "text": "L'integrale definito calcola l'area sotto una curva. Il teorema fondamentale lega derivate e integrali."
+ },
+ {
+  "id": "ma",
+  "nodeId": "ma",
+  "title": "Matrici",
+  "text": "Il determinante di una matrice quadrata indica se è invertibile. Gli autovalori risolvono il polinomio caratteristico."
+ },
+ {
+  "id": "fi",
+  "nodeId": "fi",
+  "title": "Fisica: moto",
+  "text": "Un corpo in caduta libera accelera a 9,8 m/s². La velocità cresce linearmente nel tempo."
+ },
+ {
+  "id": "te",
+  "nodeId": "te",
+  "title": "Termodinamica",
+  "text": "Il primo principio conserva l'energia. L'entropia di un sistema isolato non diminuisce mai."
+ },
+ {
+  "id": "ce",
+  "nodeId": "ce",
+  "title": "Cellula",
+  "text": "I mitocondri producono ATP nella respirazione cellulare. Il nucleo contiene il DNA."
+ },
+ {
+  "id": "ge",
+  "nodeId": "ge",
+  "title": "Genetica",
+  "text": "Le mutazioni del DNA possono cambiare le proteine. Mendel descrisse l'ereditarietà dei caratteri dominanti."
+ },
+ {
+  "id": "st",
+  "nodeId": "st",
+  "title": "Storia: Rivoluzione francese",
+  "text": "La Rivoluzione francese iniziò nel 1789 con la presa della Bastiglia. Abolì i privilegi feudali."
+ },
+ {
+  "id": "ro",
+  "nodeId": "ro",
+  "title": "Roma antica",
+  "text": "Giulio Cesare attraversò il Rubicone nel 49 a.C. La repubblica romana divenne impero con Augusto."
+ },
+ {
+  "id": "pr",
+  "nodeId": "pr",
+  "title": "Programmazione",
+  "text": "Un algoritmo di ordinamento rapido ha complessità media n log n. La ricorsione richiede un caso base."
+ },
+ {
+  "id": "ec",
+  "nodeId": "ec",
+  "title": "Economia",
+  "text": "L'inflazione è l'aumento generale dei prezzi. La banca centrale regola i tassi di interesse."
+ }
+]

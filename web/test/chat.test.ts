@@ -65,7 +65,7 @@ describe("prompt", () => {
     const budget = { total: 4096, answer: 1000 };
     const prompt = buildPrompt("Domanda?", [], candidates, budget);
     expect(prompt.system.startsWith(INSTRUCTIONS)).toBe(true);
-    expect(prompt.system).toContain("FONTI\n[1] Nodo 0\n");
+    expect(prompt.system).toContain("<<<\n[1] Nodo 0\n");
     expect(prompt.sources.length).toBeGreaterThan(0);
     expect(prompt.sources.length).toBeLessThan(50);
     const used = estimate(prompt.system) + estimate(prompt.question);
@@ -165,7 +165,7 @@ describe("scelta del modello", () => {
     expect(reply.text).toBe("Online: la derivata [1].");
     const worker = calls.find((c) => c.url === "/ai/chat")!;
     expect(worker.body).toEqual({
-      system: expect.stringContaining("FONTI\n[1] Derivate"),
+      system: expect.stringContaining("<<<\n[1] Derivate"),
       messages: [...history, { role: "user", text: "Cos'è una derivata?" }],
       maxOutputTokens: 4000,
     });

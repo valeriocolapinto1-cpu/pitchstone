@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var clientSecret = ""
     @State private var chatUsesGemini = true
     @State private var syncEnabled = true
+    @State private var autoAnalysis = false
     @State private var confirmingErase = false
     @State private var eraseMessage: String?
     /// "Rivedi la presentazione": RootView la apre quando questo foglio è chiuso.
@@ -56,12 +57,13 @@ struct SettingsView: View {
                 }
                 Section {
                     Toggle("Sincronizzazione attiva", isOn: $syncEnabled)
+                    Toggle("Analisi automatica degli appunti", isOn: $autoAnalysis)
                     Button("Cancella tutto dal server…", role: .destructive) { confirmingErase = true }
                         .disabled(notes.syncStatus == .notConfigured)
                 } header: {
                     Text("Dati nel cloud")
                 } footer: {
-                    Text("Con la sincronizzazione spenta niente parte dall'iPad, nemmeno verso Gemini. Cancellare dal server toglie appunti, storico, disegni, allegati e backup; i dati sull'iPad restano.")
+                    Text("Con la sincronizzazione spenta niente parte dall'iPad, nemmeno verso Gemini. Cancellare dal server toglie appunti, storico, disegni, allegati e backup; i dati sull'iPad restano. L'analisi automatica, spenta di default, propone nodi e collegamenti con il modello locale dopo le modifiche.")
                 }
                 Section {
                     Toggle("Usa Gemini quando sei online", isOn: $chatUsesGemini)
@@ -100,6 +102,7 @@ struct SettingsView: View {
                     Button("Salva") {
                         notes.chatUsesGemini = chatUsesGemini
                         if notes.syncEnabled != syncEnabled { notes.syncEnabled = syncEnabled }
+                        notes.autoAnalysis = autoAnalysis
                         notes.saveSyncSettings(workerURL: workerURL, clientID: clientID, clientSecret: clientSecret)
                         dismiss()
                     }
@@ -110,6 +113,7 @@ struct SettingsView: View {
                 workerURL = notes.workerURL
                 chatUsesGemini = notes.chatUsesGemini
                 syncEnabled = notes.syncEnabled
+                autoAnalysis = notes.autoAnalysis
             }
             .confirmationDialog(
                 "Cancellare tutto dal server?", isPresented: $confirmingErase, titleVisibility: .visible

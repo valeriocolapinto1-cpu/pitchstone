@@ -792,4 +792,27 @@ describe("versione e configurazione", () => {
     expect((await call("/sync/config", { token, headers: { "sec-fetch-site": "cross-site" } })).status).toBe(403);
     expect((await call("/sync/config", { method: "POST", body: "{}", token })).status).toBe(404);
   });
+
+  it("GET /status riassume database, Gemini e ultimo backup, solo con il token", async () => {
+    expect((await call("/status")).status).toBe(401);
+    const token = await sign(validPayload());
+    upstream.mockImplementation(async (input) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url === `${TEAM}/cdn-cgi/access/certs`) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      if (url.endsWith("/rpc/backup_status")) return Response.json({ last_backup_at: "2026-10-17T04:30:00Z", age_hours: 5.5 });
+      return new Response("unexpected", { status: 599 });
+    });
+    const response = await call("/status", { token });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ api: 1, gemini: Boolean(env.GEMINI_API_KEY), database: true, last_backup_at: "2026-10-17T04:30:00Z", backup_age_hours: 5.5 });
+    upstream.mockImplementation(async (input) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url === `${TEAM}/cdn-cgi/access/certs`) return Response.json({ keys: [{ ...jwk, kid: "k1" }] });
+      return new Response("giù", { status: 503 });
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const down = await call("/status", { token });
+    expect(down.status).toBe(200);
+    expect(await down.json()).toMatchObject({ database: false, last_backup_at: null });
+  });
 });
