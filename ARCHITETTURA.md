@@ -6,6 +6,15 @@ Stato: versione 1.0, da approvare prima della fase 0. Le voci marcate **[DA VERI
 
 ---
 
+> **Stato aggiornato a ottobre 2026.** Le sezioni sotto descrivono il progetto iniziale; dove la realtà è diversa vale questo riquadro.
+>
+> - **Database**: esistono solo `nodes`, `edges`, `node_versions`, `ink_pages`, `attachments`, `purged`, `storage_trash`, `sync_meta` e `keepalive`. `chunks`, `chats`, `messages`, `quizzes`, `reviews`, `review_logs`, `goals`, `exams`, `pdf_pages` e `sync_changes` non sono più create (migrazione `20261017120000`): chat, quiz ed esami vivono solo sull'iPad, e l'estensione `vector` è stata tolta. Nessun embedding sul server.
+> - **Sync**: il protocollo è `sync_push`/`sync_pull` con cursore `server_seq`, `epoch` e `purged`; è descritto da `contract/` (JSON Schema + fixture, verificati da Worker, PWA e iPad) e versionato con l'header `X-Pitchstone-Api` (ADR 0018).
+> - **PWA** (`web/`): editor Markdown, penna, grafo di link, tutor sul PC (modello locale Ollama o Gemini), cestino, schermata di connessione. Servita dal Worker `ai-proxy` dietro Cloudflare Access (ADR 0013, 0021).
+> - **Backup**: v2, per esecuzione, un file per pagina con `manifest.json` per ultimo (sha256, conteggi); rifiuta cali oltre il 20%; ripristino con `npm run restore`; prova mensile `restore-drill` (ADR 0016, `docs/runbook-backup.md`).
+> - **Privacy**: rilevamento della salute in Swift e TypeScript (gemelli), tag `solo-locale`, redazione sul server, `/account/export` e `/account/erase` (ADR 0017).
+> - **Documenti**: indice in [docs/README.md](docs/README.md); operazioni in [docs/runbook-operazioni.md](docs/runbook-operazioni.md).
+
 ## 1. Visione e ambito
 
 - Uso personale, senza condivisione. Nessun account multiutente nella prima versione.
@@ -345,9 +354,14 @@ Regole operative:
 pitchstone/
 ├── README.md
 ├── ARCHITETTURA.md                 # questo documento
+├── CONTRIBUTING.md, SECURITY.md
+├── contract/                       # schemi JSON e fixture del protocollo di sync
+├── web/                            # PWA per il PC (Vite + TypeScript)
 ├── docs/
+│   ├── README.md                   # indice
 │   ├── decisioni/                  # ADR, una decisione per file
-│   └── fasi/                       # stato e criteri di ogni fase
+│   ├── fasi/                       # stato e criteri di ogni fase
+│   └── runbook-*.md                # backup e operazioni
 ├── ios/
 │   ├── Pitchstone.xcodeproj        # creato in fase 0 o 2
 │   ├── Pitchstone/
@@ -367,7 +381,9 @@ pitchstone/
 │   └── keepalive/                  # script del keep-alive, se serve
 └── .github/
     └── workflows/
-        ├── ci-linux.yml            # lint e test del backend, ogni PR
+        ├── ci-linux.yml            # lint, test e schema, ogni PR e main
+        ├── secrets.yml             # gitleaks
+        ├── restore-drill.yml       # prova mensile di ripristino
         ├── ci-ios.yml              # build e test iOS su macOS, solo su main o su richiesta
         └── keepalive.yml           # ping Supabase ogni 3 giorni
 ```
@@ -443,7 +459,9 @@ Ogni fase ha: obiettivo, criteri di completamento, test richiesti. Ogni fase seg
 
 ## 10. Pipeline CI
 
-- **ci-linux.yml**: su ogni PR. Lint, test del backend, controllo dello schema SQL. Usa solo minuti Linux, che costano 1 per minuto.
+- **ci-linux.yml**: su ogni PR e su `main`. Lint, test e `npm audit` di Worker, PWA e keep-alive, `wrangler deploy --dry-run`, schema SQL, test end-to-end e Kit Swift su Linux. Il job `ci` riassume tutti gli altri ed è quello da richiedere come controllo obbligatorio. Solo minuti Linux.
+- **secrets.yml**: gitleaks sulla storia (configurazione in `.gitleaks.toml`).
+- **restore-drill.yml**: prova mensile di ripristino del backup.
 - **ci-ios.yml**: su `main` o manualmente. Build e test del progetto iOS su macOS. Circa 10 volte il costo in minuti. Eseguita solo quando serve, per restare nei circa 200 minuti macOS al mese.
 - **keepalive.yml**: ogni 3 giorni. Esegue una `select` leggera su una tabella di servizio con la chiave pubblica. Costo stimato: circa 10 minuti al mese.
 
