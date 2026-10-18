@@ -1,6 +1,6 @@
 # Pitchstone
 
-Secondo cervello personale per iPad: grafo di note, appunti a penna, chat AI sulle proprie fonti e quiz con ripetizione spaziata. Il progetto è descritto in [ARCHITETTURA.md](ARCHITETTURA.md); decisioni in [docs/decisioni](docs/decisioni), stato delle fasi in [docs/fasi](docs/fasi).
+Secondo cervello personale per iPad: grafo di note, appunti a penna, chat AI sulle proprie fonti e quiz con ripetizione spaziata. Il progetto è descritto in [ARCHITETTURA.md](ARCHITETTURA.md); indice dei documenti in [docs/README.md](docs/README.md), decisioni in [docs/decisioni](docs/decisioni), contributi in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Backend locale
 
@@ -30,6 +30,19 @@ E2E_SUPABASE_URL=$API_URL E2E_SUPABASE_SECRET_KEY=$SECRET_KEY E2E_SUPABASE_ANON_
 ```
 
 Keep-alive: `cd tools/keepalive && npm ci && npm run lint && npm test`.
+
+## PWA per il PC
+
+La PWA è in `web/` (Vite + TypeScript) e viene servita dal Worker `ai-proxy`, dietro Cloudflare Access.
+
+```sh
+cd web
+npm ci
+npm run dev        # http://localhost:5173, con proxy verso il Worker locale (8787)
+npm run lint && npm test && npm run build
+```
+
+Tutor: modello locale (Ollama su `localhost:11434`) o Gemini attraverso il Worker, solo con conferma.
 
 ## Client iOS
 

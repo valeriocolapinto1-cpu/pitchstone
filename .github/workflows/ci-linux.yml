@@ -1,6 +1,8 @@
 name: ci-linux
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -30,6 +32,9 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      # La configurazione del Worker deve restare valida (binding, rotte, cron) anche senza deploy.
+      - run: npx wrangler deploy --dry-run
+      - run: npm audit --omit=dev --audit-level=high
 
   # App web per il PC: tipi, test e build.
   web:
@@ -48,8 +53,10 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm test
       - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
 
   keepalive:
     runs-on: ubuntu-latest
@@ -69,6 +76,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
 
   database:
     runs-on: ubuntu-latest
@@ -129,3 +137,17 @@ jobs:
           persist-credentials: false
       - run: swift build --build-tests -Xswiftc -warnings-as-errors
       - run: swift test --skip-build
+
+  # Un solo controllo da richiedere come obbligatorio nelle regole del branch: passa solo se passano tutti.
+  ci:
+    if: always()
+    needs: [worker, web, keepalive, database, swift]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Tutti i job devono essere riusciti
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
+            echo "Almeno un job non è riuscito"
+            exit 1
+          fi

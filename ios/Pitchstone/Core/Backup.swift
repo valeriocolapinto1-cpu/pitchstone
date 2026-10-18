@@ -4,6 +4,7 @@ import Foundation
 import PitchstoneImport
 import PitchstoneNotes
 import PitchstoneSync
+import Security
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -12,11 +13,19 @@ import UniformTypeIdentifiers
 /// dalla password (PBKDF2-SHA256). Il file resta dove l'utente lo salva; senza la
 /// password non si apre.
 enum HealthBackup {
-    static let magic = Data("PSB1".utf8)
-    static let iterations: UInt32 = 310_000
+    /// Formato 1 (solo lettura): `PSB1` + sale + AES-GCM, 310 000 iterazioni, senza dati autenticati.
+    static let magicV1 = Data("PSB1".utf8)
+    /// Formato 2: `PSB2` + iterazioni (UInt32 big-endian) + sale + AES-GCM. Intestazione, iterazioni e sale
+    /// sono dati autenticati (AAD): modificarli fa fallire l'apertura.
+    static let magic = Data("PSB2".utf8)
+    static let iterationsV1: UInt32 = 310_000
+    static let iterations: UInt32 = 600_000
+    /// Un file con più iterazioni di così è rovinato o ostile: l'app non resta ore a derivare la chiave.
+    static let maxIterations: UInt32 = 10_000_000
+    static let saltLength = 16
 
     enum BackupError: LocalizedError {
-        case wrongPassword, notABackup, shortPassword, tooLarge
+        case wrongPassword, notABackup, shortPassword, tooLarge, keyDerivation
 
         var errorDescription: String? {
             switch self {
@@ -24,17 +33,19 @@ enum HealthBackup {
             case .notABackup: String(localized: "Il file non è un backup dei dati di salute di Pitchstone.")
             case .shortPassword: String(localized: "Usa una password di almeno 8 caratteri.")
             case .tooLarge: String(localized: "Gli allegati di salute sono troppi per un solo backup (oltre 300 MB): esportane qualcuno a parte e riprova.")
+            case .keyDerivation: String(localized: "Non sono riuscito a ricavare la chiave dalla password. Riprova.")
             }
         }
     }
 
-    static func key(password: String, salt: Data) -> SymmetricKey {
+    static func key(password: String, salt: Data, iterations: UInt32 = HealthBackup.iterations) throws -> SymmetricKey {
         var derived = Data(count: 32)
         let passwordData = Data(password.utf8)
+        var status = Int32(kCCParamError)
         derived.withUnsafeMutableBytes { out in
             salt.withUnsafeBytes { saltBytes in
                 passwordData.withUnsafeBytes { pw in
-                    _ = CCKeyDerivationPBKDF(
+                    status = CCKeyDerivationPBKDF(
                         CCPBKDFAlgorithm(kCCPBKDF2),
                         pw.baseAddress?.assumingMemoryBound(to: CChar.self), passwordData.count,
                         saltBytes.baseAddress?.assumingMemoryBound(to: UInt8.self), salt.count,
@@ -43,31 +54,65 @@ enum HealthBackup {
                 }
             }
         }
+        // Una chiave di soli zeri (derivazione fallita) non deve mai cifrare niente.
+        guard status == Int32(kCCSuccess) else { throw BackupError.keyDerivation }
         return SymmetricKey(data: derived)
     }
 
     /// Il backup si cifra in memoria, tutto insieme: oltre questa soglia l'app rischia di chiudersi.
     static let maxFileBytes = 300 * 1024 * 1024
 
+    private static func header(iterations: UInt32, salt: Data) -> Data {
+        var bigEndian = iterations.bigEndian
+        return magic + Data(bytes: &bigEndian, count: 4) + salt
+    }
+
     static func seal(_ archive: LocalArchive, password: String) throws -> Data {
         guard password.count >= 8 else { throw BackupError.shortPassword }
         guard archive.files.values.reduce(0, { $0 + $1.count }) <= maxFileBytes else { throw BackupError.tooLarge }
-        let salt = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+        var salt = Data(count: saltLength)
+        let generated = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, saltLength, $0.baseAddress!) }
+        guard generated == errSecSuccess else { throw BackupError.keyDerivation }
         let plain = try JSONEncoder().encode(archive)
-        let box = try AES.GCM.seal(plain, using: key(password: password, salt: salt))
+        let head = header(iterations: iterations, salt: salt)
+        let box = try AES.GCM.seal(plain, using: key(password: password, salt: salt), authenticating: head)
         guard let combined = box.combined else { throw BackupError.notABackup }
-        return magic + salt + combined
+        return head + combined
     }
 
     static func open(_ data: Data, password: String) throws -> LocalArchive {
-        guard data.count > magic.count + 16 + 28, data.prefix(magic.count) == magic else { throw BackupError.notABackup }
-        let salt = data.dropFirst(magic.count).prefix(16)
-        let combined = data.dropFirst(magic.count + 16)
+        // Tetto prima di toccare il contenuto: dimensione dei dati più intestazione e tag.
+        guard data.count <= maxFileBytes * 2 else { throw BackupError.tooLarge }
         let plain: Data
-        do {
-            plain = try AES.GCM.open(AES.GCM.SealedBox(combined: combined), using: key(password: password, salt: Data(salt)))
-        } catch {
-            throw BackupError.wrongPassword
+        if data.prefix(magic.count) == magic {
+            let headLength = magic.count + 4 + saltLength
+            guard data.count > headLength + 28 else { throw BackupError.notABackup }
+            let head = Data(data.prefix(headLength))
+            let iterationBytes = head.dropFirst(magic.count).prefix(4)
+            let count = iterationBytes.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+            guard count >= iterationsV1, count <= maxIterations else { throw BackupError.notABackup }
+            let salt = Data(head.suffix(saltLength))
+            let combined = Data(data.dropFirst(headLength))
+            do {
+                plain = try AES.GCM.open(AES.GCM.SealedBox(combined: combined), using: key(password: password, salt: salt, iterations: count), authenticating: head)
+            } catch let error as BackupError {
+                throw error
+            } catch {
+                throw BackupError.wrongPassword
+            }
+        } else if data.prefix(magicV1.count) == magicV1 {
+            guard data.count > magicV1.count + saltLength + 28 else { throw BackupError.notABackup }
+            let salt = Data(data.dropFirst(magicV1.count).prefix(saltLength))
+            let combined = Data(data.dropFirst(magicV1.count + saltLength))
+            do {
+                plain = try AES.GCM.open(AES.GCM.SealedBox(combined: combined), using: key(password: password, salt: salt, iterations: iterationsV1))
+            } catch let error as BackupError {
+                throw error
+            } catch {
+                throw BackupError.wrongPassword
+            }
+        } else {
+            throw BackupError.notABackup
         }
         guard let archive = try? JSONDecoder().decode(LocalArchive.self, from: plain) else { throw BackupError.notABackup }
         return archive

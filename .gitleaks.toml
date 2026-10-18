@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+# Valori pubblici della configurazione del Worker (URL del progetto, dominio del team, AUD tag di Access):
+# identificano l'applicazione ma non danno accesso. I segreti stanno in `wrangler secret`.
+[[allowlists]]
+description = "Configurazione pubblica del Worker"
+paths = ['''backend/worker-ai/wrangler\.toml''']
+regexTarget = "line"
+regexes = ['''ACCESS_AUD\s*=''']
