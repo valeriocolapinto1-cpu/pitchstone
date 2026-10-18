@@ -18,7 +18,7 @@ let package = Package(
         .library(name: "PitchstoneStudy", targets: ["PitchstoneStudy"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-markdown.git", exact: "0.8.0"),
+        .package(url: "https://github.com/swiftlang/swift-markdown.git", exact: "0.9.0"),
     ],
     targets: [
         .target(name: "PitchstoneSync"),
