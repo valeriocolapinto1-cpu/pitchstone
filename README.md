@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: fase-6-prodotto
-Commit: c74a6831b97549c2482676b1df3a38d9295c7451
+Branch: fase-7-web
+Commit: 5ccbe2a031314134b9e2a87decf0976061a6cbcd
