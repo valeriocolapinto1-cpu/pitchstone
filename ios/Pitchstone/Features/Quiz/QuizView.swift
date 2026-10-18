@@ -252,6 +252,11 @@ private struct QuizCard: View {
         }
         .padding()
         .background((grade.correct ? Color.green : Color.red).opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        // VoiceOver: l'esito si annuncia da solo, senza dover cercare l'etichetta.
+        .accessibilityElement(children: .contain)
+        .onAppear {
+            AccessibilityNotification.Announcement(grade.correct ? "Giusto" : "Non proprio").post()
+        }
     }
 
     private func finish(_ result: QuizGrade) {

@@ -69,6 +69,7 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
 struct OnboardingView: View {
     let onFinish: () -> Void
     @State private var page = OnboardingPage.notes
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var symbolSize: CGFloat = 64
 
     var body: some View {
@@ -90,7 +91,7 @@ struct OnboardingView: View {
             .indexViewStyle(.page(backgroundDisplayMode: .always))
             Button {
                 if let next = page.next {
-                    withAnimation { page = next }
+                    if reduceMotion { page = next } else { withAnimation { page = next } }
                 } else {
                     onFinish()
                 }
