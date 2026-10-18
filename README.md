@@ -1,4 +1,4 @@
 Screenshot dell'app
 
-Branch: main
-Commit: 7e1738a9bab16fba07fad06c8cb3eedea622178f
+Branch: fase-6-prodotto
+Commit: c74a6831b97549c2482676b1df3a38d9295c7451
